@@ -1,0 +1,48 @@
+name: women-concern
+
+services:
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.1
+    container_name: women-concern-keycloak
+    command: start-dev
+
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+
+      KC_DB: postgres
+      KC_DB_URL: ${KC_DB_URL}
+      KC_DB_USERNAME: ${KC_DB_USERNAME}
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD}
+
+    ports:
+      - "8181:8080"
+
+  api:
+    build: .
+    container_name: women-concern-api
+
+    ports:
+      - "${PORT:-8080}:8080"
+
+    env_file:
+      - .env
+
+    environment:
+      # Spring Boot DB (HOSTED)
+      SPRING_DATASOURCE_URL: ${DB_URL}
+      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
+
+      # Keycloak
+      KEYCLOAK_AUTH_SERVER_URL: ${KEYCLOAK_AUTH_SERVER_URL}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID}
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET}
+      KEYCLOAK_ISSUER_URI: ${KEYCLOAK_ISSUER_URI}
+
+    depends_on:
+      - keycloak
+
+volumes: {}
