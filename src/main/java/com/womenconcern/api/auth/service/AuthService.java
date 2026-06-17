@@ -8,4 +8,12 @@ public interface AuthService {
     AuthResponse refresh(RefreshRequest refreshRequest);
 
     MessageResponse logout(LogoutRequest logoutRequest);
+
+    MessageResponse  createUser(CreateUserRequest request);
+
+    String resetPassword(String userId);
+
+    void forgotPassword(String userId);
+
+
 }

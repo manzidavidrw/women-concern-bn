@@ -66,7 +66,16 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<Map<String, Object>> handleRuntime(RuntimeException ex,
                                                              HttpServletRequest request) {
-        return error(HttpStatus.INTERNAL_SERVER_ERROR, ex.getMessage(), request);
+        String message = ex.getMessage();
+
+        // Detect Keycloak 403 and give a clearer message
+        if (message != null && message.contains("403")) {
+            return error(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Server lacks permission to perform this action in Keycloak. " +
+                            "Check service account roles.", request);
+        }
+
+        return error(HttpStatus.INTERNAL_SERVER_ERROR, message, request);
     }
 
     private ResponseEntity<Map<String, Object>> error(HttpStatus status, String message,
