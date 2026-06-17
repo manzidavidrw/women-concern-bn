@@ -8,8 +8,8 @@ services:
     command: start-dev
 
     environment:
-      KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: Admin@women
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN_USERNAME}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
 
       KC_DB: postgres
       KC_DB_URL: ${KC_DB_URL}
