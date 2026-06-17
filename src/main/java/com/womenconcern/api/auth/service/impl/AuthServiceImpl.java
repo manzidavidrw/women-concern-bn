@@ -4,8 +4,12 @@ package com.womenconcern.api.auth.service.impl;
 import com.womenconcern.api.auth.dto.*;
 import com.womenconcern.api.auth.service.AuthService;
 import com.womenconcern.api.exceptions.UnauthorizedException;
+import jakarta.ws.rs.core.Response;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.keycloak.admin.client.Keycloak;
+import org.keycloak.representations.idm.CredentialRepresentation;
+import org.keycloak.representations.idm.UserRepresentation;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -16,6 +20,10 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
+
+import java.util.Collections;
+import java.util.Arrays;
+import java.util.UUID;
 
 
 @Slf4j
@@ -36,10 +44,12 @@ public class AuthServiceImpl implements AuthService {
     private String clientSecret;
 
     private final RestTemplate restTemplate = new RestTemplate();
+    private final Keycloak keycloak;
 
     @Override
     public AuthResponse login(LoginRequest loginRequest) {
         String url = String.format("%s/realms/%s/protocol/openid-connect/token", authServerUrl, realm);
+        System.out.println(url);
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
@@ -53,6 +63,7 @@ public class AuthServiceImpl implements AuthService {
         map.add("username", loginRequest.getEmail());
         map.add("password", loginRequest.getPassword());
         map.add("scope", "openid profile email");
+        System.out.println(map.toString());
 
 
         HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(map, headers);
@@ -129,5 +140,111 @@ public class AuthServiceImpl implements AuthService {
         } catch (Exception e) {
             throw new RuntimeException("Failed to logout from Keycloak", e);
         }
+    }
+
+
+    public MessageResponse createUser(CreateUserRequest request) {
+
+        // Step 1 — Build user
+        UserRepresentation user = new UserRepresentation();
+        user.setUsername(request.getEmail());
+        user.setEmail(request.getEmail());
+        user.setFirstName(request.getFirstName());
+        user.setLastName(request.getLastName());
+        user.setEnabled(true);
+        user.setEmailVerified(false);
+
+        // Required actions — forces password setup on first login
+        user.setRequiredActions(Arrays.asList("UPDATE_PASSWORD", "VERIFY_EMAIL"));
+
+        user.singleAttribute("phoneNumber", request.getPhoneNumber());
+        user.singleAttribute("employeeId",UUID.randomUUID().toString());
+
+        // Step 2 — Set a random temporary password (needed to create account)
+        // but user never sees or uses this — they'll set their own via email
+        String tempPassword = UUID.randomUUID().toString();
+        CredentialRepresentation credential = new CredentialRepresentation();
+        credential.setTemporary(true);
+        credential.setType(CredentialRepresentation.PASSWORD);
+        credential.setValue(tempPassword);
+        user.setCredentials(Collections.singletonList(credential));
+
+        // Step 3 — Create user in Keycloak
+        Response response = keycloak.realm(realm).users().create(user);
+
+        if (response.getStatus() != 201) {
+            String errorBody = response.readEntity(String.class);
+            if (response.getStatus() == 409) {
+                throw new RuntimeException("A user with this email already exists.");
+            }
+            throw new RuntimeException("Failed to create user: "
+                    + response.getStatus() + " - " + errorBody);
+        }
+
+        String userId = response.getLocation().getPath()
+                .replaceAll(".*/([^/]+)$", "$1");
+
+        // Step 4 — Assign role
+        try {
+            var roleRepresentation = keycloak.realm(realm)
+                    .roles()
+                    .list()
+                    .stream()
+                    .filter(r -> r.getName().equals(request.getRole()))
+                    .findFirst()
+                    .orElseThrow(() -> new RuntimeException(
+                            "Role not found in Keycloak: " + request.getRole()
+                    ));
+
+            keycloak.realm(realm)
+                    .users()
+                    .get(userId)
+                    .roles()
+                    .realmLevel()
+                    .add(Collections.singletonList(roleRepresentation));
+
+        } catch (RuntimeException e) {
+            // Role assignment failed — delete the user to avoid orphaned accounts
+            keycloak.realm(realm).users().get(userId).remove();
+            throw e;
+        }
+
+        // Step 5 — Send welcome email with set-password link
+        try {
+            keycloak.realm(realm)
+                    .users()
+                    .get(userId)
+                    .executeActionsEmail(Arrays.asList("UPDATE_PASSWORD"));
+
+            log.info("Welcome email sent to {}", request.getEmail());
+        } catch (Exception e) {
+            log.warn("User created but welcome email failed for {}: {}",
+                    request.getEmail(), e.getMessage());
+            // Don't fail — user exists, admin can manually reset password
+        }
+
+        return new MessageResponse(
+                "User account created for " + request.getEmail() +
+                        ". A welcome email has been sent with instructions to set their password."
+        );
+    }
+    public String resetPassword(String userId) {
+        String newPassword = UUID.randomUUID().toString().substring(0, 8);
+
+        CredentialRepresentation credential = new CredentialRepresentation();
+        credential.setTemporary(true);
+        credential.setType(CredentialRepresentation.PASSWORD);
+        credential.setValue(newPassword);
+
+        keycloak.realm(realm).users().get(userId).resetPassword(credential);
+
+        return newPassword;
+    }
+
+    public void forgotPassword(String userId) {
+        keycloak.realm(realm)
+                .users()
+                .get(userId)
+                .executeActionsEmail(Arrays.asList("UPDATE_PASSWORD"));
     }
 }

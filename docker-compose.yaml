@@ -8,29 +8,44 @@ services:
     command: start-dev
 
     environment:
-      KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: admin
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN_USERNAME}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
 
       KC_DB: postgres
       KC_DB_URL: ${KC_DB_URL}
       KC_DB_USERNAME: ${KC_DB_USERNAME}
       KC_DB_PASSWORD: ${KC_DB_PASSWORD}
+      KC_HOSTNAME_PORT: ${KC_HOSTNAME_PORT}
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
+
+      # Brevo SMTP — using your .env naming
+      KC_SMTP_HOST: ${MAIL_HOST}
+      KC_SMTP_PORT: ${MAIL_PORT}
+      KC_SMTP_FROM: ${MAIL_FROM}
+      KC_SMTP_FROM_DISPLAY_NAME: ${MAIL_FROM_NAME}
+      KC_SMTP_AUTH: "true"
+      KC_SMTP_USER: ${MAIL_USERNAME}
+      KC_SMTP_PASSWORD: ${MAIL_PASSWORD}
+      KC_SMTP_STARTTLS: "true"
+      KC_SMTP_SSL: "false"
+
 
     ports:
-      - "8181:8080"
+      - "${KEYCLOAK_PORT}:8080"
 
   api:
     build: .
     container_name: women-concern-api
 
     ports:
-      - "${PORT:-8080}:8080"
-
+      - "${PORT}:${PORT}"
     env_file:
       - .env
 
     environment:
       # Spring Boot DB (HOSTED)
+      SERVER_PORT: ${PORT}
       SPRING_DATASOURCE_URL: ${DB_URL}
       SPRING_DATASOURCE_USERNAME: ${DB_USERNAME}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
