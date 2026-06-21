@@ -63,8 +63,6 @@ public class AuthServiceImpl implements AuthService {
         map.add("username", loginRequest.getEmail());
         map.add("password", loginRequest.getPassword());
         map.add("scope", "openid profile email");
-        System.out.println(map.toString());
-
 
         HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(map, headers);
 
