@@ -10,5 +10,6 @@ import java.util.UUID;
 
 @Repository
 public interface OutcomeRepository extends JpaRepository<Outcome, UUID> {
-    List<Outcome> findByImpactId(UUID impactId);
+    List<Outcome> findByGoalId(UUID goalId);
+
 }

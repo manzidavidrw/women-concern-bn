@@ -1,12 +1,12 @@
 package com.womenconcern.api.project.service.impl;
 
-
 import com.womenconcern.api.exception.ResourceNotFoundException;
 import com.womenconcern.api.project.dto.request.CreateOutcomeRequest;
+import com.womenconcern.api.project.dto.request.UpdateOutcomeRequest;
 import com.womenconcern.api.project.dto.response.OutcomeResponse;
-import com.womenconcern.api.project.entity.Impact;
+import com.womenconcern.api.project.entity.Goal;
 import com.womenconcern.api.project.entity.Outcome;
-import com.womenconcern.api.project.repository.ImpactRepository;
+import com.womenconcern.api.project.repository.GoalRepository;
 import com.womenconcern.api.project.repository.OutcomeRepository;
 import com.womenconcern.api.project.service.BudgetService;
 import com.womenconcern.api.project.service.OutcomeService;
@@ -25,31 +25,34 @@ import java.util.UUID;
 public class OutcomeServiceImpl implements OutcomeService {
 
     private final OutcomeRepository outcomeRepository;
-    private final ImpactRepository impactRepository;
+    private final GoalRepository goalRepository;
     private final OutcomeMapper outcomeMapper;
     private final BudgetService budgetService;
 
     @Override
     @Transactional
-    public OutcomeResponse createOutcome(UUID impactId, CreateOutcomeRequest request) {
-        log.info("Creating outcome for impact: {}", impactId);
+    public List<OutcomeResponse> createOutcomes(UUID goalId, CreateOutcomeRequest request) {
+        log.info("Creating {} outcomes for goal: {}", request.getOutcomes().size(), goalId);
 
-        Impact impact = impactRepository.findById(impactId)
-                .orElseThrow(() -> new ResourceNotFoundException("Impact not found with ID: " + impactId));
+        Goal goal = goalRepository.findById(goalId)
+                .orElseThrow(() -> new ResourceNotFoundException("Goal not found with ID: " + goalId));
 
-        Outcome outcome = Outcome.builder()
-                .impact(impact)
-                .title(request.getTitle())
-                .description(request.getDescription())
-                .build();
+        List<Outcome> outcomes = request.getOutcomes().stream()
+                .map(item -> Outcome.builder()
+                        .goal(goal)
+                        .title(item.getTitle())
+                        .description(item.getDescription())
+                        .build())
+                .toList();
 
-        Outcome savedOutcome = outcomeRepository.save(outcome);
+        List<Outcome> savedOutcomes = outcomeRepository.saveAll(outcomes);
 
-        // Recalculate project budget
-        budgetService.recalculateBudgetForProject(impact.getObjective().getProject().getId());
+        budgetService.recalculateBudgetForProject(goal.getProject().getId());
 
-        log.info("Outcome created successfully with ID: {}", savedOutcome.getId());
-        return outcomeMapper.toResponse(savedOutcome);
+        log.info("{} outcomes created successfully for goal: {}", savedOutcomes.size(), goalId);
+        return savedOutcomes.stream()
+                .map(outcomeMapper::toResponse)
+                .toList();
     }
 
     @Override
@@ -57,25 +60,23 @@ public class OutcomeServiceImpl implements OutcomeService {
     public OutcomeResponse getOutcomeById(UUID outcomeId) {
         Outcome outcome = outcomeRepository.findById(outcomeId)
                 .orElseThrow(() -> new ResourceNotFoundException("Outcome not found with ID: " + outcomeId));
-
         return outcomeMapper.toResponse(outcome);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public List<OutcomeResponse> getOutcomesByImpact(UUID impactId) {
-        impactRepository.findById(impactId)
-                .orElseThrow(() -> new ResourceNotFoundException("Impact not found with ID: " + impactId));
+    public List<OutcomeResponse> getOutcomesByGoal(UUID goalId) {
+        goalRepository.findById(goalId)
+                .orElseThrow(() -> new ResourceNotFoundException("Goal not found with ID: " + goalId));
 
-        List<Outcome> outcomes = outcomeRepository.findByImpactId(impactId);
-        return outcomes.stream()
+        return outcomeRepository.findByGoalId(goalId).stream()
                 .map(outcomeMapper::toResponse)
                 .toList();
     }
 
     @Override
     @Transactional
-    public OutcomeResponse updateOutcome(UUID outcomeId, CreateOutcomeRequest request) {
+    public OutcomeResponse updateOutcome(UUID outcomeId, UpdateOutcomeRequest request) {
         Outcome outcome = outcomeRepository.findById(outcomeId)
                 .orElseThrow(() -> new ResourceNotFoundException("Outcome not found with ID: " + outcomeId));
 
@@ -84,8 +85,7 @@ public class OutcomeServiceImpl implements OutcomeService {
 
         Outcome updatedOutcome = outcomeRepository.save(outcome);
 
-        // Recalculate project budget
-        budgetService.recalculateBudgetForProject(outcome.getImpact().getObjective().getProject().getId());
+        budgetService.recalculateBudgetForProject(outcome.getGoal().getProject().getId());
 
         log.info("Outcome updated: {}", outcomeId);
         return outcomeMapper.toResponse(updatedOutcome);
@@ -97,11 +97,10 @@ public class OutcomeServiceImpl implements OutcomeService {
         Outcome outcome = outcomeRepository.findById(outcomeId)
                 .orElseThrow(() -> new ResourceNotFoundException("Outcome not found with ID: " + outcomeId));
 
-        UUID projectId = outcome.getImpact().getObjective().getProject().getId();
+        UUID projectId = outcome.getGoal().getProject().getId();
 
         outcomeRepository.delete(outcome);
 
-        // Recalculate project budget
         budgetService.recalculateBudgetForProject(projectId);
 
         log.info("Outcome deleted: {}", outcomeId);

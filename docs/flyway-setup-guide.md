@@ -1,6 +1,5 @@
 # Setting Up Flyway with Spring Boot and PostgreSQL
 
-**Author:** Backend Team  
 **Stack:** Spring Boot 3.x / 4.x · PostgreSQL · Maven
 
 ---
@@ -37,13 +36,13 @@ Open your `pom.xml` and add the following inside `<dependencies>`:
 
 > **Important:** Since Flyway 10, PostgreSQL support was moved to a separate module (`flyway-database-postgresql`). If you only add `flyway-core`, Flyway will silently do nothing against a PostgreSQL database. Always add both.
 
-Spring Boot manages the Flyway version automatically via its BOM (Bill of Materials), so no version number is needed.
+Spring Boot manages the Flyway version automatically via its BOM, so no version number is needed.
 
 ---
 
 ## Step 2: Configure the Database Connection
 
-In `src/main/resources/application.properties`, add your database configuration:
+In `src/main/resources/application.properties`, add your database and Flyway configuration:
 
 ```properties
 # Database connection
@@ -57,31 +56,28 @@ spring.flyway.enabled=true
 spring.flyway.locations=classpath:db/migration
 spring.flyway.schemas=public
 spring.flyway.default-schema=public
+spring.flyway.baseline-on-migrate=true
+spring.flyway.baseline-version=0
+spring.flyway.out-of-order=true
+spring.flyway.validate-on-migrate=true
+spring.flyway.postgresql.transactional-lock=false
+logging.level.org.flywaydb=INFO
 
-# Optional: see Flyway logs during startup
-logging.level.org.flywaydb=DEBUG
+# JPA — use validate, not update, when Flyway manages the schema
+spring.jpa.hibernate.ddl-auto=validate
 ```
 
-If you use `application.yml`:
+### What each Flyway setting does
 
-```yaml
-spring:
-  datasource:
-    url: ${DB_URL}
-    username: ${DB_USERNAME}
-    password: ${DB_PASSWORD}
-    driver-class-name: org.postgresql.Driver
+| Setting | Value | Why |
+|---|---|---|
+| `baseline-on-migrate` | `true` | Handles databases that already have tables but no Flyway history yet |
+| `baseline-version` | `0` | Baselines at version 0 so V1 and above all run normally |
+| `out-of-order` | `true` | Allows applying migrations that arrive out of sequence (useful in team environments) |
+| `validate-on-migrate` | `true` | Checks that already-applied migrations haven't been modified before running new ones |
+| `postgresql.transactional-lock` | `false` | Avoids locking issues on some PostgreSQL hosted providers (e.g. Neon) |
 
-  flyway:
-    enabled: true
-    locations: classpath:db/migration
-    schemas: public
-    default-schema: public
-
-logging:
-  level:
-    org.flywaydb: DEBUG
-```
+> **Never use `ddl-auto=update` alongside Flyway.** Use `validate` — Hibernate will verify the schema matches your entities but won't modify it. Flyway is in charge of all schema changes.
 
 ---
 
@@ -97,8 +93,6 @@ src/
             └── migration/
                 └── V1__create_leave_types.sql
 ```
-
-Flyway looks for files in `classpath:db/migration` by default (matching what you configured above).
 
 ---
 
@@ -130,7 +124,7 @@ V{version}__{description}.sql
 | Part | Example | Notes |
 |---|---|---|
 | `V` | `V` | Always uppercase V |
-| `{version}` | `1`, `2`, `1.1` | Must increase with each migration |
+| `{version}` | `1`, `2`, `1.1`, `20260620143000` | Must increase with each migration — timestamps work well in teams |
 | `__` | `__` | Two underscores |
 | `{description}` | `create_leave_types` | Words separated by underscores |
 
@@ -138,17 +132,16 @@ V{version}__{description}.sql
 ```
 V1__create_leave_types.sql
 V2__add_leave_requests_table.sql
-V3__add_status_column_to_leave_requests.sql
-V4__create_users_table.sql
+V20260620143000__add_status_column_to_leave_requests.sql
 ```
 
-> **Never modify an existing migration file** once it has been applied. Flyway checksums each file — if you change one, it will fail on the next startup. Always create a new migration to alter existing tables.
+> **Never modify an existing migration file** once it has been applied. Flyway checksums each file — if you change one, startup will fail with a checksum mismatch error. Always create a new migration to alter existing tables.
 
 ---
 
 ## Step 5: Set Environment Variables
 
-Flyway reads the DB connection from Spring's datasource config, so you just need to set:
+Flyway reads the DB connection from Spring's datasource config. Set these environment variables:
 
 ```bash
 DB_URL=jdbc:postgresql://your-host:5432/your-db
@@ -156,15 +149,15 @@ DB_USERNAME=your-user
 DB_PASSWORD=your-password
 ```
 
-For Docker, pass them in your `docker-compose.yml`:
+For Docker, pass them in your `docker-compose.yaml`:
 
 ```yaml
 services:
-  app:
+  api:
     environment:
-      DB_URL: jdbc:postgresql://db:5432/mydb
-      DB_USERNAME: myuser
-      DB_PASSWORD: mypassword
+      SPRING_DATASOURCE_URL: ${DB_URL}
+      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
 ```
 
 ---
@@ -176,7 +169,6 @@ Start your Spring Boot application. In the logs you should see:
 ```
 INFO  o.f.c.FlywayExecutor - Database: jdbc:postgresql://... (PostgreSQL 18.4)
 INFO  o.f.core.internal.command.DbValidate - Successfully validated 1 migration
-INFO  o.f.core.internal.command.DbMigrate - Current version of schema "public": << Empty Schema >>
 INFO  o.f.core.internal.command.DbMigrate - Migrating schema "public" to version "1 - create leave types"
 INFO  o.f.core.internal.command.DbMigrate - Successfully applied 1 migration to schema "public"
 ```
@@ -189,8 +181,8 @@ A `flyway_schema_history` table is created in your database to track applied mig
 
 Every time you need to change the database schema:
 
-1. Create a new SQL file in `src/main/resources/db/migration/` with the next version number
-2. Write your SQL (ALTER TABLE, CREATE TABLE, DROP COLUMN, etc.)
+1. Create a new SQL file in `src/main/resources/db/migration/` with the next version
+2. Write your SQL (`ALTER TABLE`, `CREATE TABLE`, `DROP COLUMN`, etc.)
 3. Start the app — Flyway applies it automatically
 
 ```sql
@@ -205,10 +197,10 @@ ALTER TABLE leave_types ADD COLUMN status VARCHAR(20) DEFAULT 'ACTIVE';
 | Mistake | What Happens | Fix |
 |---|---|---|
 | Only adding `flyway-core` without `flyway-database-postgresql` | Flyway silently skips PostgreSQL | Add both dependencies |
-| Editing an existing migration file | App fails to start (checksum mismatch) | Create a new migration instead |
-| Using `spring.jpa.hibernate.ddl-auto=update` alongside Flyway | Hibernate may auto-alter tables, conflicting with Flyway | Set `ddl-auto=validate` or `none` in production |
+| Editing an existing migration file after it has been applied | App fails to start — checksum mismatch | Create a new migration instead |
+| Using `ddl-auto=update` alongside Flyway | Hibernate may auto-alter tables, conflicting with Flyway | Set `ddl-auto=validate` |
 | No `DB_URL` env variable set | App crashes on startup | Ensure all env vars are provided |
-| Database already has tables but no `flyway_schema_history` | Flyway refuses to migrate ("non-empty schema") | Set `spring.flyway.baseline-on-migrate=true` once |
+| Database already has tables but no `flyway_schema_history` | Flyway refuses to migrate ("non-empty schema") | Already handled by `baseline-on-migrate=true` |
 
 ---
 
@@ -216,8 +208,9 @@ ALTER TABLE leave_types ADD COLUMN status VARCHAR(20) DEFAULT 'ACTIVE';
 
 | What | Where |
 |---|---|
-| Dependencies | `pom.xml` — `flyway-core` + `flyway-database-postgresql` |
+| Dependencies | `flyway-core` + `flyway-database-postgresql` in `pom.xml` |
 | Config | `application.properties` — `spring.flyway.*` |
 | Migration files | `src/main/resources/db/migration/V{n}__{desc}.sql` |
 | Runs automatically | Yes — on every app startup |
 | History table | `flyway_schema_history` in your database |
+| JPA setting | `spring.jpa.hibernate.ddl-auto=validate` |

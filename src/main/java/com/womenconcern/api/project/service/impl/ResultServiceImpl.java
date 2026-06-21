@@ -2,6 +2,7 @@ package com.womenconcern.api.project.service.impl;
 
 import com.womenconcern.api.exception.ResourceNotFoundException;
 import com.womenconcern.api.project.dto.request.CreateResultRequest;
+import com.womenconcern.api.project.dto.request.UpdateResultRequest;
 import com.womenconcern.api.project.dto.response.ResultResponse;
 import com.womenconcern.api.project.entity.Outcome;
 import com.womenconcern.api.project.entity.Result;
@@ -30,25 +31,28 @@ public class ResultServiceImpl implements ResultService {
 
     @Override
     @Transactional
-    public ResultResponse createResult(UUID outcomeId, CreateResultRequest request) {
+    public List<ResultResponse> createResult(UUID outcomeId, CreateResultRequest request) {
         log.info("Creating result for outcome: {}", outcomeId);
 
         Outcome outcome = outcomeRepository.findById(outcomeId)
                 .orElseThrow(() -> new ResourceNotFoundException("Outcome not found with ID: " + outcomeId));
 
-        Result result = Result.builder()
+        List <Result> result = request.getResults().stream()
+                .map(r -> Result.builder()
                 .outcome(outcome)
-                .title(request.getTitle())
-                .description(request.getDescription())
-                .build();
+                .title(r.getTitle())
+                .description(r.getDescription())
+                .build())
+                .toList();
 
-        Result savedResult = resultRepository.save(result);
+        List<Result> savedResult = resultRepository.saveAll(result);
 
         // Recalculate project budget
-        budgetService.recalculateBudgetForProject(outcome.getImpact().getObjective().getProject().getId());
+        budgetService.recalculateBudgetForProject(outcome.getGoal().getProject().getId());
 
-        log.info("Result created successfully with ID: {}", savedResult.getId());
-        return resultMapper.toResponse(savedResult);
+        return savedResult.stream()
+                .map(resultMapper ::toResponse)
+                .toList();
     }
 
     @Override
@@ -74,9 +78,10 @@ public class ResultServiceImpl implements ResultService {
 
     @Override
     @Transactional
-    public ResultResponse updateResult(UUID resultId, CreateResultRequest request) {
+    public ResultResponse updateResult(UUID resultId, UpdateResultRequest request) {
         Result result = resultRepository.findById(resultId)
                 .orElseThrow(() -> new ResourceNotFoundException("Result not found with ID: " + resultId));
+
 
         result.setTitle(request.getTitle());
         result.setDescription(request.getDescription());
@@ -84,7 +89,7 @@ public class ResultServiceImpl implements ResultService {
         Result updatedResult = resultRepository.save(result);
 
         // Recalculate project budget
-        budgetService.recalculateBudgetForProject(result.getOutcome().getImpact().getObjective().getProject().getId());
+        budgetService.recalculateBudgetForProject(result.getOutcome().getGoal().getProject().getId());
 
         log.info("Result updated: {}", resultId);
         return resultMapper.toResponse(updatedResult);
@@ -96,7 +101,7 @@ public class ResultServiceImpl implements ResultService {
         Result result = resultRepository.findById(resultId)
                 .orElseThrow(() -> new ResourceNotFoundException("Result not found with ID: " + resultId));
 
-        UUID projectId = result.getOutcome().getImpact().getObjective().getProject().getId();
+        UUID projectId = result.getOutcome().getGoal().getProject().getId();
 
         resultRepository.delete(result);
 

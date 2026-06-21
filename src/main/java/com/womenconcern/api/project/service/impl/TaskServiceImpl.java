@@ -5,6 +5,7 @@ package com.womenconcern.api.project.service.impl;
 import com.womenconcern.api.exception.ResourceNotFoundException;
 import com.womenconcern.api.exception.UnauthorizedException;
 import com.womenconcern.api.project.dto.request.CreateTaskRequest;
+import com.womenconcern.api.project.dto.request.UpdateTaskRequest;
 import com.womenconcern.api.project.dto.response.TaskResponse;
 import com.womenconcern.api.project.entity.Activity;
 import com.womenconcern.api.project.entity.Task;
@@ -36,44 +37,38 @@ public class TaskServiceImpl implements TaskService {
 
     @Override
     @Transactional
-    public TaskResponse createTask(UUID activityId, CreateTaskRequest request, UUID fieldOfficerId) {
-        log.info("Creating task for activity: {}", activityId);
+    public List<TaskResponse> createTasks(UUID activityId, CreateTaskRequest request, UUID fieldOfficerId) {
+        log.info("Creating {} tasks for activity: {}", request.getTasks().size(), activityId);
 
         Activity activity = activityRepository.findById(activityId)
                 .orElseThrow(() -> new ResourceNotFoundException("Activity not found with ID: " + activityId));
 
-        Task task = Task.builder()
-                .activity(activity)
-                .title(request.getTitle())
-                .description(request.getDescription())
-                .costEstimate(request.getCostEstimate())
-                .fieldOfficerId(fieldOfficerId)
-                .status(TaskStatus.DRAFT)
-                .projectManagerApprovalStatus(ApprovalStatus.PENDING)
-                .financeApprovalStatus(ApprovalStatus.PENDING)
-                .executiveApprovalStatus(ApprovalStatus.PENDING)
-                .build();
+        // Build without saving first so we can validate each one
+        List<Task> tasks = request.getTasks().stream()
+                .map(item -> Task.builder()
+                        .activity(activity)
+                        .title(item.getTitle())
+                        .description(item.getDescription())
+                        .costEstimate(item.getCostEstimate())
+                        .fieldOfficerId(fieldOfficerId)
+                        .status(TaskStatus.DRAFT)
+                        .projectManagerApprovalStatus(ApprovalStatus.PENDING)
+                        .financeApprovalStatus(ApprovalStatus.PENDING)
+                        .executiveApprovalStatus(ApprovalStatus.PENDING)
+                        .build())
+                .toList();
 
-        Task savedTask = taskRepository.save(task);
+        // Validate BEFORE saving — throws if any task pushes project over budget
+        budgetService.validateTaskBatch(tasks);
 
-        // Update activity budget
-        activity.updateTotalBudget();
-        activityRepository.save(activity);
+        List<Task> savedTasks = taskRepository.saveAll(tasks);
 
-        // Trigger budget recalculation up the hierarchy
         budgetService.recalculateBudgetForActivity(activity);
 
-        log.info("Task created successfully with ID: {}", savedTask.getId());
-        return taskMapper.toResponse(savedTask);
-    }
-
-    @Override
-    @Transactional(readOnly = true)
-    public TaskResponse getTaskById(UUID taskId) {
-        Task task = taskRepository.findById(taskId)
-                .orElseThrow(() -> new ResourceNotFoundException("Task not found with ID: " + taskId));
-
-        return taskMapper.toResponse(task);
+        log.info("{} tasks created successfully for activity: {}", savedTasks.size(), activityId);
+        return savedTasks.stream()
+                .map(taskMapper::toResponse)
+                .toList();
     }
 
     @Override
@@ -83,6 +78,13 @@ public class TaskServiceImpl implements TaskService {
         return tasks.stream()
                 .map(taskMapper::toResponse)
                 .toList();
+    }
+    @Override
+    @Transactional(readOnly = true)
+    public TaskResponse getTaskById(UUID taskId) {
+        Task task = taskRepository.findById(taskId)
+                .orElseThrow(() -> new ResourceNotFoundException("Task not found with ID: " + taskId));
+        return taskMapper.toResponse(task);
     }
 
     @Override
@@ -96,7 +98,7 @@ public class TaskServiceImpl implements TaskService {
 
     @Override
     @Transactional
-    public TaskResponse updateTask(UUID taskId, CreateTaskRequest request, UUID fieldOfficerId) {
+    public TaskResponse updateTask(UUID taskId, UpdateTaskRequest request, UUID fieldOfficerId) {
         Task task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new ResourceNotFoundException("Task not found with ID: " + taskId));
 
@@ -112,19 +114,16 @@ public class TaskServiceImpl implements TaskService {
         task.setDescription(request.getDescription());
         task.setCostEstimate(request.getCostEstimate());
 
+        // Validate BEFORE saving — task already has ID so old cost is excluded from sum
+        budgetService.validateTaskBudget(task);
+
         Task updatedTask = taskRepository.save(task);
 
-        // Update activity budget
-        Activity activity = task.getActivity();
-        activity.updateTotalBudget();
-        activityRepository.save(activity);
+        budgetService.recalculateBudgetForActivity(task.getActivity());
 
-        // Trigger budget recalculation up the hierarchy
-        budgetService.recalculateBudgetForActivity(activity);
-
+        log.info("Task updated: {}", taskId);
         return taskMapper.toResponse(updatedTask);
     }
-
     @Override
     @Transactional
     public void deleteTask(UUID taskId, UUID fieldOfficerId) {

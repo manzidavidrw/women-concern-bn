@@ -2,11 +2,16 @@ package com.womenconcern.api.auth.controller;
 
 
 import com.womenconcern.api.auth.dto.*;
+import com.womenconcern.api.auth.entity.User;
 import com.womenconcern.api.auth.service.AuthService;
+import com.womenconcern.api.utils.AuthUtils;
 import lombok.RequiredArgsConstructor;
+import org.springdoc.core.annotations.ParameterObject;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -55,17 +60,31 @@ public class AuthController {
         authService.forgotPassword(userId);
         return ResponseEntity.ok("Password reset email sent to user.");
     }
-    @PutMapping("/{userId}/profile")
+
+    @PutMapping(
+            value = "/me",
+            consumes = MediaType.MULTIPART_FORM_DATA_VALUE
+    )
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<EmployeeProfileResponse> updateMyProfile(
-            @PathVariable String userId,
-            @RequestBody UpdateProfileRequest request) {
-        return ResponseEntity.ok(authService.updateMyProfile(userId, request));
+            @ParameterObject @ModelAttribute UpdateProfileForm form,
+            @RequestPart(value = "profilePicture", required = false)
+            MultipartFile profilePicture,
+            @RequestPart(value = "certificates", required = false)
+            List<MultipartFile> certificates
+    ) {
+        User user = AuthUtils.getCurrentUser();
+        return ResponseEntity.ok(
+                authService.updateMyProfile(user.getId().toString(), form, profilePicture, certificates)
+        );
+    }
+    @GetMapping("/me")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<EmployeeProfileResponse> getMyProfile() {
+        User user = AuthUtils.getCurrentUser();
+        return ResponseEntity.ok(authService.getMyProfile(user.getId().toString()));
     }
 
-    @GetMapping("/{userId}/profile")
-    public ResponseEntity<EmployeeProfileResponse> getMyProfile(@PathVariable String userId) {
-        return ResponseEntity.ok(authService.getMyProfile(userId));
-    }
     @GetMapping("/profiles")
     @PreAuthorize("hasRole('ADMIN') or hasRole('EXECUTIVE_DIRECTOR')")
     public ResponseEntity<List<EmployeeProfileResponse>> getAllProfiles() {
