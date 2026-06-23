@@ -1,7 +1,6 @@
 # Setting Up jOOQ with Spring Boot and PostgreSQL
 
-**Author:** Backend Team  
-**Stack:** Spring Boot 3.x / 4.x · PostgreSQL · Maven · Flyway
+**Stack:** Spring Boot 3.x / 4.x · PostgreSQL · Maven · Flyway · Testcontainers
 
 ---
 
@@ -11,23 +10,22 @@ jOOQ (Java Object Oriented Querying) generates Java classes directly from your d
 
 **Without jOOQ:**
 ```java
-// String-based — typos only caught at runtime
-String sql = "SELECT * FROM leav_types"; // typo! won't fail until runtime
+// Typo only caught at runtime
+dsl.fetch("SELECT * FROM leav_types");
 ```
 
 **With jOOQ:**
 ```java
-// Type-safe — typo caught at compile time
-dsl.selectFrom(Tables.LEAV_TYPES); // compiler error immediately
+// Compiler error immediately
+dsl.selectFrom(Tables.LEAV_TYPES);
 ```
 
 ---
 
 ## Prerequisites
 
-Before setting up jOOQ code generation, you need:
-- Flyway configured and migrations applied (see the Flyway setup guide)
-- A running PostgreSQL database with your schema already created by Flyway
+- Flyway configured and migration files written (see the Flyway setup guide)
+- **Docker Desktop installed and running** — the code generator uses Testcontainers to spin up a temporary PostgreSQL container
 - Maven
 
 ---
@@ -47,33 +45,52 @@ In your `pom.xml`, add inside `<dependencies>`:
 <dependency>
     <groupId>org.jooq</groupId>
     <artifactId>jooq</artifactId>
-    <version>3.19.35</version>
+    <version>${jooq.version}</version>
 </dependency>
 
-<!-- jOOQ code generator (used only during development) -->
+<!-- jOOQ code generator -->
 <dependency>
     <groupId>org.jooq</groupId>
     <artifactId>jooq-codegen</artifactId>
-    <version>3.19.35</version>
+    <version>${jooq.version}</version>
 </dependency>
 
-<!-- jOOQ metadata (used by the generator to read DB schema) -->
+<!-- jOOQ metadata -->
 <dependency>
     <groupId>org.jooq</groupId>
     <artifactId>jooq-meta</artifactId>
-    <version>3.19.35</version>
+    <version>${jooq.version}</version>
+</dependency>
+
+<!-- Testcontainers — for spinning up PostgreSQL during code generation -->
+<dependency>
+    <groupId>org.testcontainers</groupId>
+    <artifactId>testcontainers</artifactId>
+    <version>1.20.4</version>
+    <scope>test</scope>
+</dependency>
+
+<dependency>
+    <groupId>org.testcontainers</groupId>
+    <artifactId>postgresql</artifactId>
+    <version>1.20.4</version>
+    <scope>test</scope>
 </dependency>
 ```
 
-> You can define `<jooq.version>3.19.35</jooq.version>` in `<properties>` and reference it as `${jooq.version}` to keep versions consistent.
+Define the jOOQ version in `<properties>`:
+
+```xml
+<properties>
+    <jooq.version>3.19.35</jooq.version>
+</properties>
+```
 
 ---
 
 ## Step 2: Configure the Generated Sources Directory
 
-jOOQ will output generated Java files into a folder. You need to tell Maven to treat that folder as a source directory.
-
-Add the `build-helper-maven-plugin` inside `<build><plugins>`:
+Tell Maven to include the generated folder as a source directory. Add the `build-helper-maven-plugin` inside `<build><plugins>`:
 
 ```xml
 <plugin>
@@ -88,7 +105,7 @@ Add the `build-helper-maven-plugin` inside `<build><plugins>`:
             </goals>
             <configuration>
                 <sources>
-                    <source>src/main/generated/jooq</source>
+                    <source>target/generated-sources/jooq</source>
                 </sources>
             </configuration>
         </execution>
@@ -96,13 +113,86 @@ Add the `build-helper-maven-plugin` inside `<build><plugins>`:
 </plugin>
 ```
 
-> We use `src/main/generated/jooq` (not `target/`) so generated classes survive `mvn clean` and can be committed to git — which is required for Docker builds to work.
+---
+
+## Step 3: Add the Maven Profile for Code Generation
+
+Add this profile to your `pom.xml`. It wires the codegen class into the Maven lifecycle so you can trigger it with a single command:
+
+```xml
+<profiles>
+    <profile>
+        <id>jooq-generate</id>
+        <build>
+            <plugins>
+                <plugin>
+                    <groupId>org.codehaus.mojo</groupId>
+                    <artifactId>exec-maven-plugin</artifactId>
+                    <version>3.1.0</version>
+                    <executions>
+                        <execution>
+                            <id>generate-jooq</id>
+                            <phase>test-compile</phase>
+                            <goals>
+                                <goal>java</goal>
+                            </goals>
+                            <configuration>
+                                <mainClass>com.yourcompany.yourapp.codegen.JooqCodegen</mainClass>
+                                <classpathScope>test</classpathScope>
+                                <includeProjectDependencies>true</includeProjectDependencies>
+                                <includePluginDependencies>true</includePluginDependencies>
+                            </configuration>
+                        </execution>
+                    </executions>
+                    <dependencies>
+                        <dependency>
+                            <groupId>org.postgresql</groupId>
+                            <artifactId>postgresql</artifactId>
+                            <version>${postgresql.version}</version>
+                        </dependency>
+                        <dependency>
+                            <groupId>org.testcontainers</groupId>
+                            <artifactId>testcontainers</artifactId>
+                            <version>1.20.4</version>
+                        </dependency>
+                        <dependency>
+                            <groupId>org.testcontainers</groupId>
+                            <artifactId>postgresql</artifactId>
+                            <version>1.20.4</version>
+                        </dependency>
+                        <dependency>
+                            <groupId>org.jooq</groupId>
+                            <artifactId>jooq-codegen</artifactId>
+                            <version>${jooq.version}</version>
+                        </dependency>
+                        <dependency>
+                            <groupId>org.jooq</groupId>
+                            <artifactId>jooq-meta</artifactId>
+                            <version>${jooq.version}</version>
+                        </dependency>
+                        <dependency>
+                            <groupId>org.flywaydb</groupId>
+                            <artifactId>flyway-core</artifactId>
+                            <version>${flyway.version}</version>
+                        </dependency>
+                        <dependency>
+                            <groupId>org.flywaydb</groupId>
+                            <artifactId>flyway-database-postgresql</artifactId>
+                            <version>${flyway.version}</version>
+                        </dependency>
+                    </dependencies>
+                </plugin>
+            </plugins>
+        </build>
+    </profile>
+</profiles>
+```
 
 ---
 
-## Step 3: Create the Code Generator Class
+## Step 4: Create the Code Generator Class
 
-Create the following class in `src/test/java/`:
+Create this class in `src/test/java/`:
 
 ```
 src/
@@ -118,129 +208,169 @@ package com.yourcompany.yourapp.codegen;
 import org.flywaydb.core.Flyway;
 import org.jooq.codegen.GenerationTool;
 import org.jooq.meta.jaxb.*;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.utility.DockerImageName;
 
 public class JooqCodegen {
 
-    private static final String URL      = "jdbc:postgresql://your-host:5432/your-db";
-    private static final String USER     = "your-username";
-    private static final String PASSWORD = "your-password";
+    private static final String POSTGRES_IMAGE = "postgres:16.4-alpine3.20";
+    private static final String DATABASE_NAME = "your_db";
+    private static final String USERNAME = "postgres";
+    private static final String PASSWORD = "postgres";
 
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) {
+        try {
+            try (PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>(DockerImageName.parse(POSTGRES_IMAGE))
+                    .withDatabaseName(DATABASE_NAME)
+                    .withUsername(USERNAME)
+                    .withPassword(PASSWORD)) {
 
-        // Step 1: Run Flyway to ensure schema is up to date
-        System.out.println("Running Flyway migrations...");
+                postgres.start();
+
+                String jdbcUrl = postgres.getJdbcUrl();
+                System.out.println("Started PostgreSQL container at: " + jdbcUrl);
+
+                applyMigrations(jdbcUrl);
+                generateJooqCode(jdbcUrl);
+
+                System.out.println("jOOQ code generation completed successfully!");
+                postgres.stop();
+            }
+
+            System.exit(0);
+
+        } catch (Exception e) {
+            System.err.println("jOOQ code generation failed: " + e.getMessage());
+            e.printStackTrace();
+            System.exit(1);
+        }
+    }
+
+    private static void applyMigrations(String jdbcUrl) {
+        System.out.println("Applying Flyway migrations...");
+
         Flyway.configure()
-                .dataSource(URL, USER, PASSWORD)
+                .dataSource(jdbcUrl, USERNAME, PASSWORD)
                 .locations("classpath:db/migration")
                 .baselineOnMigrate(true)
+                .baselineVersion("0")
+                .outOfOrder(true)
+                .validateOnMigrate(true)
                 .load()
                 .migrate();
-        System.out.println("Flyway done.");
 
-        // Step 2: Generate jOOQ classes from the current schema
-        System.out.println("Generating jOOQ classes...");
+        System.out.println("Flyway migrations applied successfully!");
+    }
+
+    private static void generateJooqCode(String jdbcUrl) throws Exception {
+        System.out.println("Generating jOOQ code...");
+
         Configuration configuration = new Configuration()
+                .withLogging(Logging.WARN)
                 .withJdbc(new Jdbc()
                         .withDriver("org.postgresql.Driver")
-                        .withUrl(URL)
-                        .withUser(USER)
+                        .withUrl(jdbcUrl)
+                        .withUser(USERNAME)
                         .withPassword(PASSWORD))
                 .withGenerator(new Generator()
                         .withName("org.jooq.codegen.JavaGenerator")
                         .withDatabase(new Database()
                                 .withName("org.jooq.meta.postgres.PostgresDatabase")
-                                .withInputSchema("public"))
+                                .withInputSchema("public")
+                                .withExcludes("flyway.*")       // exclude Flyway history table
+                                .withIncludeIndexes(false))
                         .withGenerate(new Generate()
+                                .withDeprecated(false)
                                 .withRecords(true)
-                                .withPojos(true))
+                                .withImmutablePojos(true)
+                                .withFluentSetters(true)
+                                .withImplicitJoinPathsToOne(true))
                         .withTarget(new Target()
                                 .withPackageName("com.yourcompany.yourapp.jooq.generated")
-                                .withDirectory("src/main/generated/jooq")));
+                                .withDirectory("target/generated-sources/jooq"))
+                        .withStrategy(new Strategy()
+                                .withName("org.jooq.codegen.DefaultGeneratorStrategy")));
 
         GenerationTool.generate(configuration);
-        System.out.println("jOOQ generation done.");
+        System.out.println("jOOQ code generated successfully!");
     }
 }
 ```
 
-### What this class does
-1. Connects to your real database
-2. Runs Flyway to make sure all migrations are applied
-3. Reads your database schema (tables, columns, types, keys)
-4. Generates Java classes that represent each table, record, and POJO
+### Why Testcontainers?
+
+- **No hardcoded credentials** — no real database URL in source code
+- **Always consistent** — uses the exact same migrations as production
+- **Works for everyone** — any developer with Docker can generate without setting up a local DB
+- **Clean slate** — fresh container every time, no leftover data issues
 
 ---
 
-## Step 4: Run the Generator
+## Step 5: Run the Generator
 
-From the terminal in your project root:
+> **Docker Desktop must be running** before executing this command.
 
-```bash
-mvn test-compile exec:java \
-  -Dexec.mainClass="com.yourcompany.yourapp.codegen.JooqCodegen" \
-  -Dexec.classpathScope=test
+**On Windows (PowerShell):**
+```powershell
+mvn test-compile "exec:java" "-Dexec.mainClass=com.yourcompany.yourapp.codegen.JooqCodegen" "-Dexec.classpathScope=test"
 ```
 
-Or from your IDE (IntelliJ / Eclipse):
-- Open `JooqCodegen.java`
-- Right-click → **Run 'JooqCodegen.main()'**
+**Or use the PowerShell script** (`generate-jooq.ps1`):
+```powershell
+./generate-jooq.ps1
+```
+
+**On Linux/Mac:**
+```bash
+./generate-jooq.sh
+```
+
+### What happens when you run it
+
+1. Testcontainers pulls and starts a `postgres:16.4-alpine3.20` Docker container
+2. Flyway applies all your migration files to that container
+3. jOOQ reads the resulting schema and generates Java classes
+4. The container is destroyed
+5. Generated files appear in `target/generated-sources/jooq/`
 
 ### What gets generated
 
-After running, you will find these files under `src/main/generated/jooq/com/yourcompany/yourapp/jooq/generated/`:
-
 ```
-generated/
-├── DefaultCatalog.java          # top-level catalog
-├── Public.java                  # your "public" schema
-├── Tables.java                  # static references to all tables  ← use this
-├── tables/
-│   ├── LeaveTypes.java          # table definition
-│   └── pojos/
-│       └── LeaveTypes.java      # plain POJO
-│   └── records/
-│       └── LeaveTypesRecord.java  # jOOQ record (row)
-└── ...
+target/generated-sources/jooq/
+└── com/yourcompany/yourapp/jooq/generated/
+    ├── DefaultCatalog.java
+    ├── Public.java
+    ├── Tables.java              ← use this to reference tables
+    ├── Keys.java
+    └── tables/
+        ├── LeaveTypes.java      ← table definition
+        ├── pojos/
+        │   └── LeaveTypes.java  ← immutable POJO
+        └── records/
+            └── LeaveTypesRecord.java  ← jOOQ record (one row)
 ```
-
----
-
-## Step 5: Commit the Generated Files
-
-Unlike `target/`, files in `src/main/generated/` should be committed to git:
-
-```bash
-git add src/main/generated/
-git commit -m "Add jOOQ generated sources"
-```
-
-This is important because:
-- Docker builds compile from the committed source — they have no DB access
-- Your teammates can build the project without running the generator themselves
-- CI/CD pipelines work without needing a live database connection at build time
 
 ---
 
 ## Step 6: Use jOOQ in Your Services
 
-Spring Boot's `spring-boot-starter-jooq` auto-configures a `DSLContext` bean from your datasource. Inject it anywhere:
+Spring Boot's `spring-boot-starter-jooq` auto-configures a `DSLContext` bean. Inject it directly:
 
 ```java
 import com.yourcompany.yourapp.jooq.generated.Tables;
-import com.yourcompany.yourapp.leave.entity.LeaveType;
 import org.jooq.DSLContext;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import lombok.RequiredArgsConstructor;
 
 import java.util.List;
 
 @Service
+@RequiredArgsConstructor
 public class LeaveService {
 
-    @Autowired
-    private DSLContext dsl;
+    private final DSLContext dsl;
 
-    // Fetch all rows and map to your JPA entity / DTO
+    // Fetch all and map to your entity/DTO
     public List<LeaveType> getLeaveTypes() {
         return dsl
                 .selectFrom(Tables.LEAVE_TYPES)
@@ -262,10 +392,20 @@ public class LeaveService {
                 .where(Tables.LEAVE_TYPES.IS_PAID.isTrue())
                 .fetchInto(LeaveType.class);
     }
+
+    // With pagination
+    public List<LeaveType> getLeaveTypesPaged(int offset, int limit) {
+        return dsl
+                .selectFrom(Tables.LEAVE_TYPES)
+                .orderBy(Tables.LEAVE_TYPES.NAME.asc())
+                .limit(limit)
+                .offset(offset)
+                .fetchInto(LeaveType.class);
+    }
 }
 ```
 
-### Key methods
+### Key DSLContext methods
 
 | Method | Use |
 |---|---|
@@ -273,31 +413,64 @@ public class LeaveService {
 | `.select(Tables.X.COLUMN)` | Select specific columns |
 | `.where(Tables.X.COL.eq(value))` | Filter rows |
 | `.fetchInto(MyClass.class)` | Map result to a class |
-| `.fetchOne()` | Fetch a single record |
+| `.fetchOne()` | Fetch a single record (null if not found) |
+| `.fetchOneInto(MyClass.class)` | Fetch single record mapped to a class |
 | `.fetch()` | Fetch all as a jOOQ `Result` |
 
 ---
 
-## Step 7: Regenerate After Schema Changes
+## Step 7: Docker Build Workflow
 
-Every time you add a new Flyway migration that changes the schema, re-run the generator:
+Since `target/` is gitignored, the generated sources are **not committed to git**. For Docker builds to work, you must generate the classes locally before building the image. The `Dockerfile` copies the `target/` folder in before packaging:
 
-```bash
-mvn test-compile exec:java \
-  -Dexec.mainClass="com.yourcompany.yourapp.codegen.JooqCodegen" \
-  -Dexec.classpathScope=test
+```dockerfile
+FROM eclipse-temurin:17-jdk AS build
+WORKDIR /app
+COPY .mvn .mvn
+COPY mvnw pom.xml ./
+RUN chmod +x mvnw
+RUN ./mvnw dependency:go-offline
+
+COPY src src
+COPY target target          # brings in pre-generated jOOQ classes
+
+RUN ./mvnw package -DskipTests   # no "clean" — preserves target/
 ```
 
-Then commit the updated generated files.
-
-### Team workflow
+### Full workflow before deploying
 
 ```
-1. Write new migration  →  V2__add_users_table.sql
-2. Run JooqCodegen      →  new Users.java, UsersRecord.java generated
-3. Use in service       →  dsl.selectFrom(Tables.USERS)...
-4. Commit everything    →  migration file + generated sources
-5. Push                 →  teammates pull, everything compiles
+1. Add a new migration file  →  V2__add_users_table.sql
+2. Generate jOOQ classes     →  ./generate-jooq.ps1  (Docker must be running)
+3. Build Docker image        →  docker compose up --build
+```
+
+---
+
+## Step 8: Regenerate After Schema Changes
+
+Every time you add a new Flyway migration, re-run the generator:
+
+```powershell
+# Windows
+./generate-jooq.ps1
+
+# Linux/Mac
+./generate-jooq.sh
+```
+
+### Team workflow summary
+
+```
+Developer adds V2__add_users_table.sql
+         ↓
+Run ./generate-jooq.ps1
+         ↓
+New Users.java, UsersRecord.java appear in target/
+         ↓
+Use in service: dsl.selectFrom(Tables.USERS)...
+         ↓
+Run docker compose up --build to deploy
 ```
 
 ---
@@ -306,12 +479,12 @@ Then commit the updated generated files.
 
 | Mistake | What Happens | Fix |
 |---|---|---|
-| Only adding `jooq-codegen` as a dependency but not running the generator | No classes generated | Run `JooqCodegen.main()` explicitly |
-| Putting generated sources in `target/` | Docker build fails — `mvn clean` wipes them | Use `src/main/generated/jooq` and commit to git |
-| Not running Flyway before the generator | Generator reads an outdated schema | Always migrate before generating (the `JooqCodegen` class does this automatically) |
-| Referencing `LEAVE_TYPES` without import | Compiler error ("cannot find symbol") | Import from `Tables` — use `Tables.LEAVE_TYPES` |
-| Casting `Result<XRecord>` to `List<MyEntity>` | Runtime `ClassCastException` | Use `.fetchInto(MyEntity.class)` instead |
-| Forgetting `baselineOnMigrate(true)` on an existing DB | Flyway throws "non-empty schema, no history table" | Add `.baselineOnMigrate(true)` to `Flyway.configure()` |
+| Docker Desktop not running when generating | Testcontainers fails to start | Start Docker Desktop first |
+| Running `mvn clean` before Docker build | Wipes generated sources from `target/` | Generate again before building |
+| Adding `mvn clean` inside Dockerfile | Build fails — generated sources gone | Use `package -DskipTests` without `clean` |
+| Casting jOOQ `Result` to `List<MyEntity>` | Runtime `ClassCastException` | Use `.fetchInto(MyEntity.class)` |
+| Referencing table without import | Compiler error "cannot find symbol" | Import `Tables` and use `Tables.YOUR_TABLE` |
+| Not regenerating after new migration | New table/column not available in code | Always re-run generator after adding migrations |
 
 ---
 
@@ -319,10 +492,11 @@ Then commit the updated generated files.
 
 | What | Where / How |
 |---|---|
-| Dependencies | `jooq`, `jooq-codegen`, `jooq-meta`, `spring-boot-starter-jooq` |
-| Generated sources dir | `src/main/generated/jooq` (committed to git) |
+| Dependencies | `jooq`, `jooq-codegen`, `jooq-meta`, `spring-boot-starter-jooq`, `testcontainers` |
 | Generator class | `src/test/java/.../codegen/JooqCodegen.java` |
-| Run generator | `mvn test-compile exec:java -Dexec.mainClass=...JooqCodegen` |
+| Generated sources | `target/generated-sources/jooq/` (gitignored) |
+| Run generator (Windows) | `./generate-jooq.ps1` — Docker must be running |
+| Run generator (Linux/Mac) | `./generate-jooq.sh` — Docker must be running |
 | Use in code | Inject `DSLContext`, query via `Tables.YOUR_TABLE` |
-| Regenerate | After every new Flyway migration |
-| Commit generated files | Yes — required for Docker and team builds |
+| Regenerate when | After every new Flyway migration |
+| Before Docker build | Run the generator first, then `docker compose up --build` |
