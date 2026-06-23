@@ -1,0 +1,14 @@
+package com.womenconcern.api.project.enums;
+
+public enum ProjectStatus {
+    DRAFT,
+    SUBMITTED_FOR_FINANCE_REVIEW,
+    FINANCE_APPROVED,
+    FINANCE_REJECTED,
+    SUBMITTED_FOR_EXECUTIVE_REVIEW,
+    EXECUTIVE_APPROVED,
+    EXECUTIVE_REJECTED,
+    IMPLEMENTATION,
+    COMPLETED,
+    ARCHIVED
+}

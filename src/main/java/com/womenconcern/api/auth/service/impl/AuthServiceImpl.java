@@ -3,7 +3,7 @@ package com.womenconcern.api.auth.service.impl;
 
 import com.womenconcern.api.auth.dto.*;
 import com.womenconcern.api.auth.service.AuthService;
-import com.womenconcern.api.exceptions.UnauthorizedException;
+import com.womenconcern.api.exception.UnauthorizedException;
 import jakarta.ws.rs.core.Response;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,10 +20,10 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
+import java.time.LocalDate;
 
-import java.util.Collections;
-import java.util.Arrays;
-import java.util.UUID;
+
+import java.util.*;
 
 
 @Slf4j
@@ -77,7 +77,6 @@ public class AuthServiceImpl implements AuthService {
             throw new UnauthorizedException("Invalid credentials or authentication failure");
         }
     }
-
 
 
     @Override
@@ -134,7 +133,7 @@ public class AuthServiceImpl implements AuthService {
 
         try {
             restTemplate.postForEntity(url, request, String.class);
-            return new MessageResponse( "Logged out successfully");
+            return new MessageResponse("Logged out successfully");
         } catch (HttpClientErrorException e) {
             throw new UnauthorizedException("Invalid refresh token");
         } catch (Exception e) {
@@ -155,10 +154,12 @@ public class AuthServiceImpl implements AuthService {
         user.setEmailVerified(false);
 
         // Required actions — forces password setup on first login
-        user.setRequiredActions(Arrays.asList("UPDATE_PASSWORD", "VERIFY_EMAIL"));
+        user.setRequiredActions(Collections.emptyList());
+
+//        user.setRequiredActions(Arrays.asList("UPDATE_PASSWORD", "VERIFY_EMAIL"));
 
         user.singleAttribute("phoneNumber", request.getPhoneNumber());
-        user.singleAttribute("employeeId",UUID.randomUUID().toString());
+        user.singleAttribute("employeeId", UUID.randomUUID().toString());
 
         // Step 2 — Set a random temporary password (needed to create account)
         // but user never sees or uses this — they'll set their own via email
@@ -228,6 +229,7 @@ public class AuthServiceImpl implements AuthService {
                         ". A welcome email has been sent with instructions to set their password."
         );
     }
+
     public String resetPassword(String userId) {
         String newPassword = UUID.randomUUID().toString().substring(0, 8);
 
@@ -247,4 +249,167 @@ public class AuthServiceImpl implements AuthService {
                 .get(userId)
                 .executeActionsEmail(Arrays.asList("UPDATE_PASSWORD"));
     }
+
+    @Override
+    public EmployeeProfileResponse updateMyProfile(String userId, UpdateProfileRequest request) {
+        UserRepresentation user = keycloak.realm(realm).users().get(userId).toRepresentation();
+
+        if (user == null) {
+            throw new RuntimeException("User not found: " + userId);
+        }
+
+        log.info("BEFORE update - existing attributes: {}", user.getAttributes());
+        log.info("Incoming request - phone: {}, address: {}",
+                request.getPhoneNumber(), request.getAddress());
+
+        // Build a fresh, guaranteed-mutable copy of the attributes map
+        Map<String, List<String>> attributes = new HashMap<>();
+        if (user.getAttributes() != null) {
+            attributes.putAll(user.getAttributes());
+        }
+
+        if (request.getFirstName() != null) {
+            user.setFirstName(request.getFirstName());
+        }
+        if (request.getLastName() != null) {
+            user.setLastName(request.getLastName());
+        }
+        if (request.getPhoneNumber() != null) {
+            attributes.put("phoneNumber", List.of(request.getPhoneNumber()));
+        }
+        if (request.getAddress() != null) {
+            attributes.put("address", List.of(request.getAddress()));
+        }
+        if (request.getEmergencyContact() != null) {
+            attributes.put("emergencyContact", List.of(request.getEmergencyContact()));
+        }
+        if (request.getCertificates() != null) {
+            attributes.put("certificates", List.of(String.join(",", request.getCertificates())));
+        }
+        if (request.getDateOfBirth() != null) {
+            attributes.put("dateOfBirth", List.of(request.getDateOfBirth().toString()));
+        }
+
+        // Explicitly assign the whole map back onto the user object
+        user.setAttributes(attributes);
+
+        log.info("SENDING to Keycloak - attributes: {}", user.getAttributes());
+
+        try {
+            keycloak.realm(realm).users().get(userId).update(user);
+        } catch (Exception e) {
+            log.error("Failed to update user {} in Keycloak: {}", userId, e.getMessage(), e);
+            throw new RuntimeException("Failed to update profile: " + e.getMessage());
+        }
+
+        // Re-fetch fresh from Keycloak to confirm what was actually persisted
+        UserRepresentation updated = keycloak.realm(realm).users().get(userId).toRepresentation();
+        Map<String, List<String>> updatedAttrs = updated.getAttributes() != null
+                ? updated.getAttributes()
+                : Collections.emptyMap();
+
+        log.info("AFTER update - re-fetched attributes: {}", updatedAttrs);
+
+        EmployeeProfileResponse response = new EmployeeProfileResponse();
+        response.setEmail(updated.getEmail());
+        response.setFirstName(updated.getFirstName());
+        response.setLastName(updated.getLastName());
+        response.setPhoneNumber(getAttr(updatedAttrs, "phoneNumber"));
+        response.setJobTitle(getAttr(updatedAttrs, "jobTitle"));
+        response.setAddress(getAttr(updatedAttrs, "address"));
+        response.setEmergencyContact(getAttr(updatedAttrs, "emergencyContact"));
+
+        String certs = getAttr(updatedAttrs, "certificates");
+        response.setCertificates(certs.isBlank() ? List.of() : List.of(certs.split(",")));
+
+        String dob = getAttr(updatedAttrs, "dateOfBirth");
+        if (!dob.isBlank()) {
+            try {
+                response.setDateOfBirth(LocalDate.parse(dob));
+            } catch (Exception e) {
+                log.warn("Invalid dateOfBirth for user {}: {}", userId, dob);
+            }
+        }
+
+        return response;
+    }
+    public EmployeeProfileResponse getMyProfile(String userId) {
+        UserRepresentation user = keycloak.realm(realm).users().get(userId).toRepresentation();
+
+        if (user == null) {
+            throw new RuntimeException("User not found: " + userId);
+        }
+
+        // Attributes can be null if the user has no custom attributes set
+        Map<String, List<String>> attributes = user.getAttributes() != null
+                ? user.getAttributes()
+                : Collections.emptyMap();
+
+        EmployeeProfileResponse response = new EmployeeProfileResponse();
+        response.setEmail(user.getEmail());
+        response.setFirstName(user.getFirstName());
+        response.setLastName(user.getLastName());
+        response.setPhoneNumber(getAttr(attributes, "phoneNumber"));
+        response.setJobTitle(getAttr(attributes, "jobTitle"));
+        response.setAddress(getAttr(attributes, "address"));
+        response.setEmergencyContact(getAttr(attributes, "emergencyContact"));
+
+        String certs = getAttr(attributes, "certificates");
+        response.setCertificates(certs.isBlank() ? List.of() : List.of(certs.split(",")));
+
+        String dob = getAttr(attributes, "dateOfBirth");
+        if (!dob.isBlank()) {
+            try {
+                response.setDateOfBirth(LocalDate.parse(dob));
+            } catch (Exception e) {
+                log.warn("Invalid dateOfBirth format for user {}: {}", userId, dob);
+            }
+        }
+
+        return response;
+    }
+
+    // Helper - safely get a single-value attribute, default to empty string
+    private String getAttr(Map<String, List<String>> attributes, String key) {
+        List<String> values = attributes.get(key);
+        if (values == null || values.isEmpty()) {
+            return "";
+        }
+        return values.get(0);
+    }
+
+    @Override
+    public List<EmployeeProfileResponse> getAllProfiles() {
+        List<UserRepresentation> users = keycloak.realm(realm).users().list();
+
+        return users.stream().map(user -> {
+            Map<String, List<String>> attributes = user.getAttributes() != null
+                    ? user.getAttributes()
+                    : Collections.emptyMap();
+
+            EmployeeProfileResponse response = new EmployeeProfileResponse();
+            response.setEmail(user.getEmail());
+            response.setFirstName(user.getFirstName());
+            response.setLastName(user.getLastName());
+            response.setPhoneNumber(getAttr(attributes, "phoneNumber"));
+            response.setJobTitle(getAttr(attributes, "jobTitle"));
+            response.setAddress(getAttr(attributes, "address"));
+            response.setEmergencyContact(getAttr(attributes, "emergencyContact"));
+
+            String certs = getAttr(attributes, "certificates");
+            response.setCertificates(certs.isBlank() ? List.of() : List.of(certs.split(",")));
+
+            String dob = getAttr(attributes, "dateOfBirth");
+            if (!dob.isBlank()) {
+                try {
+                    response.setDateOfBirth(LocalDate.parse(dob));
+                } catch (Exception e) {
+                    log.warn("Invalid dateOfBirth for user {}: {}", user.getId(), dob);
+                }
+            }
+
+            return response;
+        }).toList();
+    }
 }
+

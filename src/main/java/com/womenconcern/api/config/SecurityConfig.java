@@ -2,6 +2,9 @@ package com.womenconcern.api.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -15,13 +18,20 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import java.time.Instant;
 import java.util.*;
 import java.util.stream.Stream;
 
 @Configuration
 @EnableWebSecurity
-@EnableMethodSecurity
+@EnableMethodSecurity(prePostEnabled = true)
 public class SecurityConfig {
+
+    private final ObjectMapper objectMapper;
+
+    public SecurityConfig(ObjectMapper objectMapper) {
+        this.objectMapper = objectMapper;
+    }
 
     private static final String[] SWAGGER_WHITELIST = {
             "/swagger-ui/**",
@@ -37,9 +47,6 @@ public class SecurityConfig {
     private static final String[] ACTUATOR_WHITELIST = {
             "/actuator/**"
     };
-
-    private String[] finalWhitelist;
-
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -64,21 +71,35 @@ public class SecurityConfig {
 
     @Bean
     public JwtAuthenticationConverter jwtAuthenticationConverter() {
+        System.out.println("========== CUSTOM JWT CONVERTER CREATED ==========");
+
         JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
 
         converter.setJwtGrantedAuthoritiesConverter(jwt -> {
+
+            System.out.println("========== CONVERTING JWT ==========");
+
             Collection<GrantedAuthority> authorities = new HashSet<>();
 
             Map<String, Object> realmAccess = jwt.getClaim("realm_access");
 
+            System.out.println("realm_access = " + realmAccess);
+
             if (realmAccess != null) {
                 Object rolesObj = realmAccess.get("roles");
+
                 if (rolesObj instanceof List<?> roles) {
-                    roles.forEach(role ->
-                            authorities.add(new SimpleGrantedAuthority("ROLE_" + role.toString()))
-                    );
+                    roles.forEach(role -> {
+                        System.out.println("Adding ROLE_" + role);
+
+                        authorities.add(
+                                new SimpleGrantedAuthority("ROLE_" + role)
+                        );
+                    });
                 }
             }
+
+            System.out.println("Authorities = " + authorities);
 
             return authorities;
         });
