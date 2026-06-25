@@ -8,6 +8,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
@@ -53,4 +55,22 @@ public class AuthController {
         authService.forgotPassword(userId);
         return ResponseEntity.ok("Password reset email sent to user.");
     }
+    @PutMapping("/{userId}/profile")
+    public ResponseEntity<EmployeeProfileResponse> updateMyProfile(
+            @PathVariable String userId,
+            @RequestBody UpdateProfileRequest request) {
+        return ResponseEntity.ok(authService.updateMyProfile(userId, request));
+    }
+
+    @GetMapping("/{userId}/profile")
+    public ResponseEntity<EmployeeProfileResponse> getMyProfile(@PathVariable String userId) {
+        return ResponseEntity.ok(authService.getMyProfile(userId));
+    }
+    @GetMapping("/profiles")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('EXECUTIVE_DIRECTOR')")
+    public ResponseEntity<List<EmployeeProfileResponse>> getAllProfiles() {
+        return ResponseEntity.ok(authService.getAllProfiles());
+    }
+
+
 }

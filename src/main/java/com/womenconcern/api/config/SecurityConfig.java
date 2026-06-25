@@ -1,27 +1,51 @@
 package com.womenconcern.api.config;
 
+import com.womenconcern.api.security.JwtAuthFilter;
+import com.womenconcern.api.security.UserDetailsServiceImpl;
+import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
+import org.springframework.security.config.core.GrantedAuthorityDefaults;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.AuthenticationProvider;
+import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
+import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.core.GrantedAuthority;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import java.time.Instant;
 import java.util.*;
 import java.util.stream.Stream;
 
 @Configuration
 @EnableWebSecurity
-@EnableMethodSecurity
+@EnableMethodSecurity(prePostEnabled = true)
 public class SecurityConfig {
+
+    private final ObjectMapper objectMapper;
+    private final JwtAuthFilter jwtAuthFilter;
+    private final UserDetailsServiceImpl userDetailsService;
+
+    public SecurityConfig(ObjectMapper objectMapper, JwtAuthFilter jwtAuthFilter, UserDetailsServiceImpl userDetailsService) {
+        this.objectMapper = objectMapper;
+        this.jwtAuthFilter = jwtAuthFilter;
+        this.userDetailsService = userDetailsService;
+    }
 
     private static final String[] SWAGGER_WHITELIST = {
             "/swagger-ui/**",
@@ -38,9 +62,6 @@ public class SecurityConfig {
             "/actuator/**"
     };
 
-    private String[] finalWhitelist;
-
-
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
@@ -55,36 +76,19 @@ public class SecurityConfig {
                         .requestMatchers("/api/public/**", "/api/auth/**").permitAll()
                         .anyRequest().authenticated()
                 )
-                .oauth2ResourceServer(oauth2 -> oauth2
-                        .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter()))
-                );
+                .authenticationProvider(authenticationProvider())
+                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
-
     @Bean
-    public JwtAuthenticationConverter jwtAuthenticationConverter() {
-        JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
-
-        converter.setJwtGrantedAuthoritiesConverter(jwt -> {
-            Collection<GrantedAuthority> authorities = new HashSet<>();
-
-            Map<String, Object> realmAccess = jwt.getClaim("realm_access");
-
-            if (realmAccess != null) {
-                Object rolesObj = realmAccess.get("roles");
-                if (rolesObj instanceof List<?> roles) {
-                    roles.forEach(role ->
-                            authorities.add(new SimpleGrantedAuthority("ROLE_" + role.toString()))
-                    );
-                }
-            }
-
-            return authorities;
-        });
-
-        return converter;
+    public AuthenticationProvider authenticationProvider() {
+        DaoAuthenticationProvider provider = new DaoAuthenticationProvider();
+        provider.setUserDetailsService(userDetailsService);
+        provider.setPasswordEncoder(passwordEncoder());
+        return provider;
     }
+
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
@@ -98,4 +102,18 @@ public class SecurityConfig {
         source.registerCorsConfiguration("/**", config);
         return source;
     }
+    @Bean
+    public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {
+        return config.getAuthenticationManager();
+    }
+
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
+    @Bean
+    static GrantedAuthorityDefaults grantedAuthorityDefaults() {
+        return new GrantedAuthorityDefaults("");
+    }
+
 }

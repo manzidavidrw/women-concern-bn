@@ -2,6 +2,8 @@ package com.womenconcern.api.auth.service;
 
 import com.womenconcern.api.auth.dto.*;
 
+import java.util.List;
+
 public interface AuthService {
     AuthResponse login(LoginRequest loginRequest);
 
@@ -16,4 +18,9 @@ public interface AuthService {
     void forgotPassword(String userId);
 
 
+    EmployeeProfileResponse updateMyProfile(String userId, UpdateProfileRequest request);
+
+    EmployeeProfileResponse getMyProfile(String userId);
+
+    List<EmployeeProfileResponse> getAllProfiles();
 }

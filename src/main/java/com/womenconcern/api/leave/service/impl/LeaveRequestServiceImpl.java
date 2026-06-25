@@ -12,7 +12,7 @@ import com.womenconcern.api.leave.repository.LeaveTypeRepository;
 import com.womenconcern.api.leave.service.ILeaveRequestService;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
-import org.keycloak.KeycloakPrincipal;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
@@ -29,12 +29,10 @@ public class LeaveRequestServiceImpl implements ILeaveRequestService {
     @Override
     public LeaveRequestDto.Output createLeaveRequest(LeaveRequestDto.Input input) {
 
-        // Get an EmployeeId from the session
-        String employeeId = ((KeycloakPrincipal<?>)
-                SecurityContextHolder.getContext().getAuthentication().getPrincipal())
-                .getKeycloakSecurityContext()
-                .getToken()
-                .getSubject();
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+
+        // auth.getName() returns the subject/username set in your JwtAuthenticationFilter
+        String employeeId = auth.getName();
 
         LeaveType leaveType = leaveTypeRepository.findById(input.leaveTypeId())
                 .orElseThrow(() -> new EntityNotFoundException("Leave type not found"));
@@ -80,7 +78,6 @@ public class LeaveRequestServiceImpl implements ILeaveRequestService {
         LeaveRequest saved = leaveRequestRepository.save(request);
 
         return mapToOutput(saved);
-
     }
 
     @Override
