@@ -16,7 +16,7 @@ public class CreateUserRequest {
     @NotBlank(message = "First name is required")
     private String firstName;  // Required
 
-    private String lastName;   // Optional
+    private String lastName;
 
     @Size(min = 10, max = 15, message = "Phone number must be between 10 and 15 digits")
     private String phoneNumber;  // Optional but validated if present

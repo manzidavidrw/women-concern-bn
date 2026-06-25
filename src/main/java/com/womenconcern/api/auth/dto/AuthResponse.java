@@ -1,7 +1,6 @@
 package com.womenconcern.api.auth.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -12,27 +11,29 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class AuthResponse {
+
     @JsonProperty("access_token")
     private String accessToken;
-
-    @JsonProperty("expires_in")
-    private Integer expiresIn;
-
-    @JsonProperty("refresh_expires_in")
-    private Integer refreshExpiresIn;
 
     @JsonProperty("refresh_token")
     private String refreshToken;
 
     @JsonProperty("token_type")
-    private String tokenType;
+    @Builder.Default
+    private String tokenType = "Bearer";
 
-    @JsonProperty("not-before-policy")
-    private Integer notBeforePolicy;
+    @JsonProperty("expires_in")
+    private long expiresIn;       // seconds
 
-    @JsonProperty("session_state")
-    private String sessionState;
+    @JsonProperty("user_id")
+    private String userId;
 
-    @JsonProperty("scope")
-    private String scope;
+    @JsonProperty("email")
+    private String email;
+
+    @JsonProperty("role")
+    private String role;
+
+    @JsonProperty("must_change_password")
+    private boolean mustChangePassword;
 }

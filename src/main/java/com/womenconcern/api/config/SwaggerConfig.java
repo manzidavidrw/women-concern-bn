@@ -13,17 +13,21 @@ public class SwaggerConfig {
 
     @Bean
     public OpenAPI openAPI() {
+        final String securitySchemeName = "bearerAuth";
+
         return new OpenAPI()
                 .info(new Info()
-                        .title("Women Concern API")
+                        .title("Women Concern Management System API")
                         .version("1.0.0")
-                        .description("Women Concern Management System API"))
-                .addSecurityItem(new SecurityRequirement().addList("Bearer Token"))
+                        .description("Women Concern Management System — Internal API"))
+                // Apply bearer auth globally to all endpoints
+                .addSecurityItem(new SecurityRequirement().addList(securitySchemeName))
                 .components(new Components()
-                        .addSecuritySchemes("Bearer Token", new SecurityScheme()
+                        .addSecuritySchemes(securitySchemeName, new SecurityScheme()
+                                .name(securitySchemeName)
                                 .type(SecurityScheme.Type.HTTP)
                                 .scheme("bearer")
                                 .bearerFormat("JWT")
-                                .description("Paste your Keycloak JWT token here")));
+                                .description("Enter your JWT access token (without 'Bearer ' prefix)")));
     }
 }
