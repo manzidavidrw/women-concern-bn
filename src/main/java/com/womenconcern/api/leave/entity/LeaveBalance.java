@@ -1,5 +1,6 @@
 package com.womenconcern.api.leave.entity;
 
+import com.womenconcern.api.auth.entity.User;
 import com.womenconcern.api.shared.BaseEntity;
 import jakarta.persistence.*;
 import lombok.*;
@@ -20,8 +21,9 @@ import java.time.LocalDate;
 @Builder
 public class LeaveBalance extends BaseEntity {
 
-    @Column(name = "employee_id", nullable = false)
-    private String employeeId; // Keycloak user ID
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "employee_id", nullable = false)
+    private User employee;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "leave_type_id", nullable = false)
@@ -33,16 +35,37 @@ public class LeaveBalance extends BaseEntity {
     @Column(name = "allocated_days", nullable = false)
     private Integer allocatedDays;
 
+    @Builder.Default
     @Column(name = "used_days", nullable = false)
     private Integer usedDays = 0;
 
-    private Integer carriedForward;
+    @Builder.Default
+    @Column(name = "carried_forward", nullable =false)
+    private Integer carriedForward = 0;
 
+    @Column(name = "carry_expiry_date")
     private LocalDate carryExpiryDate;
 
+    @PrePersist
+    public void prePersist() {
+        if (usedDays == null) usedDays = 0;
+        if (carriedForward == null) carriedForward = 0;
+    }
+
+    @Transient
     public int getRemainingDays() {
+        int allocated = allocatedDays == null ? 0 : allocatedDays;
         int carried = carriedForward == null ? 0 : carriedForward;
         int used = usedDays == null ? 0 : usedDays;
-        return allocatedDays + carried - used;
+
+        return Math.max(allocated + carried - used, 0);
+    }
+
+    public void useDays(int days) {
+        this.usedDays += days;
+    }
+
+    public void restoreDays(int days) {
+        this.usedDays -= days;
     }
 }

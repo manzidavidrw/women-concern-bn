@@ -1,5 +1,6 @@
 package com.womenconcern.api.auth.entity;
 
+import com.womenconcern.api.auth.enums.Gender;
 import com.womenconcern.api.auth.enums.UserRole;
 import jakarta.persistence.*;
 import lombok.*;
@@ -63,6 +64,10 @@ public class User implements UserDetails {
 
     @Column(name = "date_of_birth")
     private LocalDate dateOfBirth;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private Gender gender;
 
     /** Comma-separated list of certificates */
     @Column

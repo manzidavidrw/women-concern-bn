@@ -13,19 +13,20 @@ import java.util.UUID;
 public interface LeaveBalanceRepository extends JpaRepository<LeaveBalance, UUID> {
 
     Optional<LeaveBalance> findByEmployeeIdAndLeaveTypeIdAndYear(
-            String employeeId,
+            UUID employeeId,
             UUID leaveTypeId,
             Integer year
     );
 
-    List<LeaveBalance> findByEmployeeId(String employeeId);
 
-    List<LeaveBalance> findByEmployeeIdAndYear(String employeeId, Integer year);
+    List<LeaveBalance> findByEmployeeId(UUID employeeId);
+
+    List<LeaveBalance> findByEmployeeIdAndYear(UUID employeeId, Integer year);
 
     List<LeaveBalance> findByLeaveType(LeaveType leaveType);
 
     boolean existsByEmployeeIdAndLeaveTypeIdAndYear(
-            String employeeId,
+            UUID employeeId,
             UUID leaveTypeId,
             Integer year
     );

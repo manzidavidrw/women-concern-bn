@@ -1,5 +1,6 @@
 package com.womenconcern.api.auth.dto;
 
+import com.womenconcern.api.auth.enums.Gender;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -17,6 +18,8 @@ public class CreateUserRequest {
     private String firstName;  // Required
 
     private String lastName;
+
+    private Gender gender;
 
     @Size(min = 10, max = 15, message = "Phone number must be between 10 and 15 digits")
     private String phoneNumber;  // Optional but validated if present
