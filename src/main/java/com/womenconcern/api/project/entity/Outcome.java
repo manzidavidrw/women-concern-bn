@@ -23,8 +23,8 @@ import java.util.List;
 public class Outcome extends BaseEntity {
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "impact_id", nullable = false)
-    private Impact impact;
+    @JoinColumn(name = "goal_id", nullable = false)
+    private Goal goal;
 
     @Column(nullable = false)
     private String title;

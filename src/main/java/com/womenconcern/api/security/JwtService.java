@@ -31,7 +31,8 @@ public class JwtService {
         return buildToken(user, accessTokenExpirySeconds * 1_000L, Map.of(
                 "role",  user.getRole().name(),
                 "email", user.getEmail(),
-                "name",  user.getFirstName() + " " + (user.getLastName() != null ? user.getLastName() : "")
+                "name",  user.getFirstName() + " " + (user.getLastName() != null ? user.getLastName() : ""),
+                "User_Id",user.getId()
         ));
     }
 

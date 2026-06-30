@@ -1,5 +1,6 @@
 package com.womenconcern.api.auth.entity;
 
+import com.womenconcern.api.auth.enums.Gender;
 import com.womenconcern.api.auth.enums.UserRole;
 import jakarta.persistence.*;
 import lombok.*;
@@ -55,6 +56,12 @@ public class User implements UserDetails {
     @Column
     private String address;
 
+    @Column(name = "profile_picture_url", length = 1000)
+    private String profilePictureUrl;
+
+    @Column(name = "profile_picture_id", length = 500)
+    private String profilePictureId;
+
     @Column(name = "national_id")
     private String nationalId;
 
@@ -63,6 +70,10 @@ public class User implements UserDetails {
 
     @Column(name = "date_of_birth")
     private LocalDate dateOfBirth;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private Gender gender;
 
     /** Comma-separated list of certificates */
     @Column

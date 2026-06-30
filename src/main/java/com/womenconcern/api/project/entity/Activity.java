@@ -40,10 +40,11 @@ public class Activity extends BaseEntity {
     private BigDecimal totalBudget;
 
     @Column(name = "field_officer_id")
-    private UUID fieldOfficerId; // Keycloak user UUID
+    private UUID fieldOfficerId;
 
     @OneToMany(mappedBy = "activity", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @Fetch(FetchMode.SUBSELECT)
+    @Builder.Default
     private List<Task> tasks = new ArrayList<>();
 
     public BigDecimal calculateTotalBudget() {
