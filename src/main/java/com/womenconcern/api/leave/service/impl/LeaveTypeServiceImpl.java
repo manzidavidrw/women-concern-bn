@@ -1,5 +1,8 @@
 package com.womenconcern.api.leave.service.impl;
 
+import com.womenconcern.api.auth.enums.Gender;
+import com.womenconcern.api.auth.entity.User;
+import com.womenconcern.api.auth.repository.UserRepository;
 import com.womenconcern.api.leave.dto.LeaveTypeDto;
 import com.womenconcern.api.leave.entity.LeaveType;
 import com.womenconcern.api.leave.repository.LeaveTypeRepository;
@@ -12,6 +15,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -20,6 +24,8 @@ import java.util.UUID;
 public class LeaveTypeServiceImpl implements ILeaveTypeService {
 
     private final LeaveTypeRepository leaveTypeRepository;
+    private final UserRepository userRepository;
+
 
     @Override
     public LeaveTypeDto.Output createLeaveType(LeaveTypeDto.Input input) {
@@ -34,6 +40,10 @@ public class LeaveTypeServiceImpl implements ILeaveTypeService {
         entity.setMaxDaysPerYear(input.maxDaysPerYear());
         entity.setRequiresAttachment(input.requiresAttachment());
         entity.setIsPaid(input.isPaid());
+        entity.setEligibility(input.eligibility());
+        entity.setAllowCarryForward(input.allowCarryForward());
+        entity.setMaxCarryForwardDays(input.maxCarryForwardDays());
+
 
         LeaveType saved = leaveTypeRepository.save(entity);
         return mapToOutput(saved);
@@ -56,8 +66,26 @@ public class LeaveTypeServiceImpl implements ILeaveTypeService {
         entity.setMaxDaysPerYear(input.maxDaysPerYear());
         entity.setRequiresAttachment(input.requiresAttachment());
         entity.setIsPaid(input.isPaid());
+        entity.setEligibility(input.eligibility());
+        entity.setAllowCarryForward(input.allowCarryForward());
+        entity.setMaxCarryForwardDays(input.maxCarryForwardDays());
 
         return mapToOutput(entity);
+    }
+
+    @Override
+    public List<LeaveTypeDto.Output> getAvailableLeaveTypes(UUID userId) {
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new EntityNotFoundException("User not found"));
+
+        List<LeaveType> leaveTypes = leaveTypeRepository.findAll();
+
+
+        return leaveTypes.stream()
+                .filter(type -> isEligible(user, type))
+                .map(this::mapToOutput)
+                .toList();
     }
 
     @Override
@@ -90,6 +118,14 @@ public class LeaveTypeServiceImpl implements ILeaveTypeService {
         leaveTypeRepository.deleteById(id);
     }
 
+    private boolean isEligible(User user, LeaveType leaveType) {
+        return switch (leaveType.getEligibility()) {
+            case ALL -> true;
+            case MALE_ONLY -> user.getGender() == Gender.MALE;
+            case FEMALE_ONLY -> user.getGender() == Gender.FEMALE;
+        };
+    }
+
     private LeaveTypeDto.Output mapToOutput(LeaveType entity) {
         return new LeaveTypeDto.Output(
                 entity.getId(),
@@ -98,6 +134,9 @@ public class LeaveTypeServiceImpl implements ILeaveTypeService {
                 entity.getMaxDaysPerYear(),
                 entity.getRequiresAttachment(),
                 entity.getIsPaid(),
+                entity.getEligibility(),
+                entity.getAllowCarryForward(),
+                entity.getMaxCarryForwardDays(),
                 entity.getCreatedAt(),
                 entity.getUpdatedAt()
         );

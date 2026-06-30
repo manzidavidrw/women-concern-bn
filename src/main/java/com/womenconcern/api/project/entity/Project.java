@@ -1,6 +1,5 @@
 package com.womenconcern.api.project.entity;
 
-
 import com.womenconcern.api.project.enums.ApprovalStatus;
 import com.womenconcern.api.project.enums.ProjectStatus;
 import com.womenconcern.api.shared.BaseEntity;
@@ -33,10 +32,14 @@ public class Project extends BaseEntity {
     private String description;
 
     @Column(name = "project_manager_id", nullable = false)
-    private UUID projectManagerId; // Keycloak user UUID
+    private UUID projectManagerId;
+
+    @Column(name = "approved_budget")
+    private BigDecimal approvedBudget;
 
     @Column(name = "total_budget")
     private BigDecimal totalBudget;
+
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -83,27 +86,20 @@ public class Project extends BaseEntity {
 
     @OneToMany(mappedBy = "project", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @Fetch(FetchMode.SUBSELECT)
-    private List<Objective> objectives = new ArrayList<>();
+    @Builder.Default
+    private List<Goal> goals = new ArrayList<>();
 
     @PrePersist
     protected void onCreate() {
-        if (status == null) {
-            status = ProjectStatus.DRAFT;
-        }
-        if (projectManagerApprovalStatus == null) {
-            projectManagerApprovalStatus = ApprovalStatus.PENDING;
-        }
-        if (financeApprovalStatus == null) {
-            financeApprovalStatus = ApprovalStatus.PENDING;
-        }
-        if (executiveApprovalStatus == null) {
-            executiveApprovalStatus = ApprovalStatus.PENDING;
-        }
+        if (status == null) status = ProjectStatus.DRAFT;
+        if (projectManagerApprovalStatus == null) projectManagerApprovalStatus = ApprovalStatus.PENDING;
+        if (financeApprovalStatus == null) financeApprovalStatus = ApprovalStatus.PENDING;
+        if (executiveApprovalStatus == null) executiveApprovalStatus = ApprovalStatus.PENDING;
     }
 
     public BigDecimal calculateTotalBudget() {
-        return objectives.stream()
-                .map(Objective::calculateTotalBudget)
+        return goals.stream()
+                .map(Goal::calculateTotalBudget)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 }

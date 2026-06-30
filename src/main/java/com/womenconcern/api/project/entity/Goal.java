@@ -15,12 +15,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Entity
-@Table(name = "objectives")
+@Table(name = "goals")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class Objective extends BaseEntity {
+public class Goal extends BaseEntity {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "project_id", nullable = false)
@@ -35,13 +35,13 @@ public class Objective extends BaseEntity {
     @Column(name = "total_budget")
     private BigDecimal totalBudget;
 
-    @OneToMany(mappedBy = "objective", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @OneToMany(mappedBy = "goal", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @Fetch(FetchMode.SUBSELECT)
-    private List<Impact> impacts = new ArrayList<>();
+    private List<Outcome> outcomes = new ArrayList<>();
 
     public BigDecimal calculateTotalBudget() {
-        return impacts.stream()
-                .map(Impact::calculateTotalBudget)
+        return outcomes.stream()
+                .map(Outcome::calculateTotalBudget)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 

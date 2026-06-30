@@ -16,12 +16,12 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class ObjectiveResponse {
+public class GoalResponse {
     private UUID id;
     private String title;
     private String description;
     private BigDecimal totalBudget;
-    private List<ImpactResponse> impacts;
+    private List<OutcomeResponse> impacts;
     private Instant createdAt;
     private Instant updatedAt;
 }

@@ -1,20 +1,21 @@
 package com.womenconcern.api.auth.service.impl;
 
-import jakarta.mail.internet.MimeMessage;
-import lombok.RequiredArgsConstructor;
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.mail.javamail.JavaMailSender;
-import org.springframework.mail.javamail.MimeMessageHelper;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.web.reactive.function.client.WebClient;
+
+import java.util.Map;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class EmailService {
 
-    private final JavaMailSender mailSender;
+    private final WebClient webClient;
 
     @Value("${app.mail.from}")
     private String fromEmail;
@@ -25,25 +26,48 @@ public class EmailService {
     @Value("${app.frontend.url:http://localhost:5173}")
     private String frontendUrl;
 
-    // ── Generic send ─────────────────────────────────────────────
+    @Value("${brevo.api.key}")
+    private String apiKey;
+
+    public EmailService(WebClient webClient) {
+        this.webClient = webClient;
+    }
+
+    @PostConstruct
+    public void debugConfig() {
+        log.info("Brevo API key starts with: {}",
+                apiKey != null ? apiKey.substring(0, 15) : "NULL - NOT LOADED");
+        log.info("Mail from: {}", fromEmail);
+    }
+
+    // ── Generic send ──────────────────────────────────────────────
 
     @Async
     public void sendEmail(String to, String subject, String htmlContent) {
         try {
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-            helper.setFrom(fromEmail, fromName);
-            helper.setTo(to);
-            helper.setSubject(subject);
-            helper.setText(htmlContent, true);
-            mailSender.send(message);
-            log.info("Email sent to {}: {}", to, subject);
+            Map<String, Object> body = Map.of(
+                    "sender", Map.of("email", fromEmail, "name", fromName),
+                    "to", new Object[]{Map.of("email", to)},
+                    "subject", subject,
+                    "htmlContent", htmlContent
+            );
+
+            String response = webClient.post()
+                    .uri("/smtp/email")
+                    .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                    .header("api-key", apiKey)
+                    .bodyValue(body)
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+
+            log.info("Email sent to {}: {} | Response: {}", to, subject, response);
         } catch (Exception e) {
             log.error("Failed to send email to {}: {}", to, e.getMessage());
         }
     }
 
-    // ── Welcome email (new account) ───────────────────────────────
+    // ── Welcome email ─────────────────────────────────────────────
 
     @Async
     public void sendWelcomeEmail(String to, String firstName, String tempPassword) {
@@ -73,13 +97,9 @@ public class EmailService {
                               margin-top:8px;font-weight:bold;">
                         Log In Now
                     </a>
-                    <p style="margin-top: 24px; color: #757575; font-size: 13px;">
-                        If you did not expect this email, please contact your administrator.
-                    </p>
                 </div>
             </div>
             """.formatted(firstName, to, tempPassword, frontendUrl);
-
         sendEmail(to, subject, html);
     }
 
@@ -106,13 +126,9 @@ public class EmailService {
                               margin-top:8px;font-weight:bold;">
                         Log In Now
                     </a>
-                    <p style="margin-top: 24px; color: #757575; font-size: 13px;">
-                        If you did not request a password reset, contact your administrator immediately.
-                    </p>
                 </div>
             </div>
             """.formatted(firstName, newPassword, frontendUrl);
-
         sendEmail(to, subject, html);
     }
 
@@ -138,7 +154,66 @@ public class EmailService {
                 </div>
             </div>
             """.formatted(taskName, approverName, frontendUrl);
+        sendEmail(to, subject, html);
+    }
 
+    // ── Activity assignment ───────────────────────────────────────
+
+    @Async
+    public void sendActivityAssignmentEmail(String to, String firstName, String activityTitle) {
+        String subject = "New Activity Assigned — " + activityTitle;
+        String html = """
+            <div style="font-family: Arial, sans-serif; max-width: 560px; margin: auto;">
+                <div style="background: #2D5016; padding: 24px; border-radius: 8px 8px 0 0;">
+                    <h2 style="color: #F4A623; margin: 0;">Women Concern Management System</h2>
+                </div>
+                <div style="padding: 24px; border: 1px solid #e0e0e0; border-top: none; border-radius: 0 0 8px 8px;">
+                    <p>Hi <strong>%s</strong>,</p>
+                    <p>You have been assigned a new activity:</p>
+                    <div style="background: #f5f5f5; padding: 16px; border-left: 4px solid #7CB342;
+                                border-radius: 4px; margin: 16px 0;">
+                        <strong style="font-size: 16px; color: #2D5016;">%s</strong>
+                    </div>
+                    <p>Please log in to view full details, related tasks, and deadlines.</p>
+                    <a href="%s/dashboard"
+                       style="background:#7CB342;color:white;padding:12px 24px;
+                              text-decoration:none;border-radius:6px;display:inline-block;
+                              margin-top:8px;font-weight:bold;">
+                        View My Activities
+                    </a>
+                </div>
+            </div>
+            """.formatted(firstName, activityTitle, frontendUrl);
+        sendEmail(to, subject, html);
+    }
+
+    // ── Activity unassignment ─────────────────────────────────────
+
+    @Async
+    public void sendActivityUnassignmentEmail(String to, String firstName, String activityTitle) {
+        String subject = "Activity Unassigned — " + activityTitle;
+        String html = """
+            <div style="font-family: Arial, sans-serif; max-width: 560px; margin: auto;">
+                <div style="background: #2D5016; padding: 24px; border-radius: 8px 8px 0 0;">
+                    <h2 style="color: #F4A623; margin: 0;">Women Concern Management System</h2>
+                </div>
+                <div style="padding: 24px; border: 1px solid #e0e0e0; border-top: none; border-radius: 0 0 8px 8px;">
+                    <p>Hi <strong>%s</strong>,</p>
+                    <p>You have been <strong style="color: #e53935;">unassigned</strong> from the following activity:</p>
+                    <div style="background: #f5f5f5; padding: 16px; border-left: 4px solid #e53935;
+                                border-radius: 4px; margin: 16px 0;">
+                        <strong style="font-size: 16px; color: #2D5016;">%s</strong>
+                    </div>
+                    <p>If you believe this was done in error, please contact your Project Manager.</p>
+                    <a href="%s/dashboard"
+                       style="background:#7CB342;color:white;padding:12px 24px;
+                              text-decoration:none;border-radius:6px;display:inline-block;
+                              margin-top:8px;font-weight:bold;">
+                        View Dashboard
+                    </a>
+                </div>
+            </div>
+            """.formatted(firstName, activityTitle, frontendUrl);
         sendEmail(to, subject, html);
     }
 }

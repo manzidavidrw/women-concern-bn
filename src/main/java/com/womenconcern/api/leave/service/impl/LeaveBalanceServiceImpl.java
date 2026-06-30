@@ -1,5 +1,8 @@
 package com.womenconcern.api.leave.service.impl;
 
+import com.womenconcern.api.auth.dto.UserDto;
+import com.womenconcern.api.auth.entity.User;
+import com.womenconcern.api.auth.repository.UserRepository;
 import com.womenconcern.api.leave.dto.LeaveBalanceDto;
 import com.womenconcern.api.leave.entity.LeaveBalance;
 import com.womenconcern.api.leave.entity.LeaveType;
@@ -11,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -21,105 +25,170 @@ public class LeaveBalanceServiceImpl implements ILeaveBalanceService {
 
     private final LeaveBalanceRepository leaveBalanceRepository;
     private final LeaveTypeRepository leaveTypeRepository;
+    private final UserRepository userRepository;
 
     @Override
-    public LeaveBalanceDto.Output createBalance(LeaveBalanceDto.Input input) {
+    public LeaveBalanceDto.Output getBalance(UUID employeeId, UUID leaveTypeId) {
 
-        if (leaveBalanceRepository.existsByEmployeeIdAndLeaveTypeIdAndYear(
-                input.employeeId(),
-                input.leaveTypeId(),
-                input.year()
-        )) {
-            throw new IllegalArgumentException("Leave balance already exists");
-        }
+        int year = java.time.Year.now().getValue();
 
-        LeaveType leaveType = leaveTypeRepository.findById(input.leaveTypeId())
+        LeaveType leaveType = leaveTypeRepository.findById(leaveTypeId)
                 .orElseThrow(() -> new EntityNotFoundException("Leave type not found"));
 
-        int carriedForward = input.carriedForward() == null ? 0 : input.carriedForward();
-
-        int allocated = input.allocatedDays();
-
-        int remaining = allocated + carriedForward;
-
-        LeaveBalance balance = LeaveBalance.builder()
-                .employeeId(input.employeeId())
-                .leaveType(leaveType)
-                .year(input.year())
-                .allocatedDays(allocated)
-                .usedDays(0)
-                .carriedForward(carriedForward)
-                .carryExpiryDate(input.carryExpiryDate())
-                .build();
-
-        return mapToOutput(leaveBalanceRepository.save(balance));
-    }
-
-    @Override
-    @Transactional(readOnly = true)
-    public LeaveBalanceDto.Output getBalance(String employeeId, UUID leaveTypeId, Integer year) {
-
-        LeaveBalance balance = leaveBalanceRepository
-                .findByEmployeeIdAndLeaveTypeIdAndYear(employeeId, leaveTypeId, year)
-                .orElseThrow(() -> new EntityNotFoundException("Leave balance not found"));
+        LeaveBalance balance = getOrCreateBalance(employeeId, leaveType, year);
 
         return mapToOutput(balance);
     }
 
     @Override
-    @Transactional(readOnly = true)
-    public List<LeaveBalanceDto.Output> getMyBalances(String employeeId) {
-        return leaveBalanceRepository.findByEmployeeId(employeeId)
+    public List<LeaveBalanceDto.Output> getEmployeeBalances(UUID employeeId) {
+
+        int year = java.time.Year.now().getValue();
+
+        return leaveTypeRepository.findAll()
+                .stream()
+                .map(type -> getOrCreateBalance(employeeId, type, year))
+                .map(this::mapToOutput)
+                .toList();
+    }
+
+    @Override
+    public List<LeaveBalanceDto.Output> getAllBalances() {
+
+        return leaveBalanceRepository.findAll()
                 .stream()
                 .map(this::mapToOutput)
                 .toList();
     }
 
     @Override
-    @Transactional(readOnly = true)
-    public List<LeaveBalanceDto.Output> getMyYearlyBalances(String employeeId, Integer year) {
-        return leaveBalanceRepository.findByEmployeeIdAndYear(employeeId, year)
-                .stream()
-                .map(this::mapToOutput)
-                .toList();
+    public LeaveBalanceDto.Output refreshBalance(UUID employeeId,
+                                                 UUID leaveTypeId,
+                                                 Integer year) {
+
+        LeaveType leaveType = leaveTypeRepository.findById(leaveTypeId)
+                .orElseThrow(() -> new EntityNotFoundException("Leave type not found"));
+
+        LeaveBalance balance = getOrCreateBalance(employeeId, leaveType, year);
+
+        balance.setAllocatedDays(leaveType.getMaxDaysPerYear());
+
+        leaveBalanceRepository.save(balance);
+
+        return mapToOutput(balance);
+    }
+
+
+    @Override
+    public LeaveBalance getOrCreateBalance(UUID employeeId,
+                                           LeaveType leaveType,
+                                           int year) {
+
+        LeaveBalance balance = leaveBalanceRepository
+                .findByEmployeeIdAndLeaveTypeIdAndYear(
+                        employeeId,
+                        leaveType.getId(),
+                        year
+                )
+                .orElseGet(() -> createNewBalance(employeeId, leaveType, year));
+
+        return refreshBalanceIfNeeded(balance);
+    }
+
+    private LeaveBalance createNewBalance(UUID employeeId,
+                                          LeaveType leaveType,
+                                          int year) {
+
+        User employee = userRepository.findById(employeeId)
+                .orElseThrow(() -> new EntityNotFoundException("Employee not found"));
+
+        return leaveBalanceRepository.save(
+                LeaveBalance.builder()
+                        .employee(employee)
+                        .leaveType(leaveType)
+                        .year(year)
+                        .allocatedDays(leaveType.getMaxDaysPerYear())
+                        .usedDays(0)
+                        .carriedForward(0)
+                        .build()
+        );
     }
 
     @Override
-    public void consumeLeaveDays(String employeeId, UUID leaveTypeId, Integer year, Integer days) {
+    public void deductLeave(UUID employeeId,
+                            LeaveType leaveType,
+                            int year,
+                            int days) {
 
-        LeaveBalance balance = leaveBalanceRepository
-                .findByEmployeeIdAndLeaveTypeIdAndYear(employeeId, leaveTypeId, year)
-                .orElseThrow(() -> new EntityNotFoundException("Leave balance not found"));
+        LeaveBalance balance = getOrCreateBalance(employeeId, leaveType, year);
 
-        if (balance.getRemainingDays() < days) {
-            throw new IllegalArgumentException("Insufficient leave balance");
+        int available = calculateAvailable(balance);
+
+        if (available < days) {
+            throw new IllegalStateException("Insufficient balance. Available: " + available);
         }
 
-        balance.setUsedDays(balance.getUsedDays() + days);
+        applyDeduction(balance, days);
+
         leaveBalanceRepository.save(balance);
     }
 
-    @Override
-    public void restoreLeaveDays(String employeeId, UUID leaveTypeId, Integer year, Integer days) {
+    private LeaveBalance refreshBalanceIfNeeded(LeaveBalance balance) {
 
-        LeaveBalance balance = leaveBalanceRepository
-                .findByEmployeeIdAndLeaveTypeIdAndYear(employeeId, leaveTypeId, year)
-                .orElseThrow(() -> new EntityNotFoundException("Leave balance not found"));
+        LocalDate now = LocalDate.now();
+        int currentYear = now.getYear();
 
-        int newUsed = balance.getUsedDays() - days;
+        if (balance.getYear() < currentYear) {
 
-        if (newUsed < 0) {
-            throw new IllegalArgumentException("Used days cannot be negative");
+            boolean isAfterFebruary = now.getMonthValue() > 2;
+
+            int validCarryForward = isAfterFebruary ? 0 : balance.getCarriedForward();
+
+            balance.setYear(currentYear);
+            balance.setAllocatedDays(balance.getLeaveType().getMaxDaysPerYear());
+            balance.setUsedDays(0);
+            balance.setCarriedForward(validCarryForward);
+
+            leaveBalanceRepository.save(balance);
         }
 
-        balance.setUsedDays(newUsed);
-        leaveBalanceRepository.save(balance);
+        return balance;
     }
+
+
+    private void applyDeduction(LeaveBalance balance, int days) {
+
+        int remaining = days;
+
+        int carry = balance.getCarriedForward();
+
+        int usedCarry = Math.min(carry, remaining);
+        balance.setCarriedForward(carry - usedCarry);
+        remaining -= usedCarry;
+
+        if (remaining > 0) {
+            balance.setUsedDays(balance.getUsedDays() + remaining);
+        }
+    }
+
+    private int calculateAvailable(LeaveBalance balance) {
+        return balance.getAllocatedDays()
+                + balance.getCarriedForward()
+                - balance.getUsedDays();
+    }
+
 
     private LeaveBalanceDto.Output mapToOutput(LeaveBalance balance) {
         return new LeaveBalanceDto.Output(
                 balance.getId(),
-                balance.getEmployeeId(),
+                new UserDto(
+                        balance.getEmployee().getId(),
+                        balance.getEmployee().getEmail(),
+                        balance.getEmployee().getFirstName(),
+                        balance.getEmployee().getLastName(),
+                        balance.getEmployee().getPhoneNumber(),
+                        balance.getEmployee().getRole()
+                ),
                 balance.getLeaveType().getId(),
                 balance.getLeaveType().getName(),
                 balance.getYear(),

@@ -1,14 +1,13 @@
 package com.womenconcern.api.project.dto.request;
 
-
-import jakarta.validation.constraints.DecimalMin;
-import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotEmpty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.math.BigDecimal;
+import java.util.List;
 
 @Data
 @NoArgsConstructor
@@ -16,11 +15,7 @@ import java.math.BigDecimal;
 @Builder
 public class CreateActivityRequest {
 
-    @NotBlank(message = "Activity title is required")
-    private String title;
-
-    private String description;
-
-    @DecimalMin(value = "0.0", inclusive = false, message = "Cost estimate must be greater than 0")
-    private BigDecimal costEstimate;
+    @Valid
+    @NotEmpty(message = "At least one activity is required")
+    private List<ActivityRequest> activities;
 }
