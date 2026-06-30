@@ -1,5 +1,6 @@
 package com.womenconcern.api.leave.entity;
 
+import com.womenconcern.api.auth.entity.User;
 import com.womenconcern.api.leave.leaveEnum.LeaveStatus;
 import com.womenconcern.api.shared.BaseEntity;
 import jakarta.persistence.*;
@@ -7,6 +8,8 @@ import lombok.*;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Table(name = "leave_requests")
@@ -17,8 +20,9 @@ import java.time.LocalDateTime;
 @Builder
 public class LeaveRequest extends BaseEntity {
 
-    @Column(name = "employee_id", nullable = false)
-    private String employeeId; // Keycloak user ID
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "employee_id", nullable = false)
+    private User employee;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "leave_type_id", nullable = false)
@@ -40,9 +44,18 @@ public class LeaveRequest extends BaseEntity {
     @Column(nullable = false)
     private LeaveStatus status;
 
+    @OneToMany(
+            mappedBy = "leaveRequest",
+            cascade = CascadeType.ALL,
+            orphanRemoval = true
+    )
+    @Builder.Default
+    private List<LeaveAttachment> attachments = new ArrayList<>();
+
     // 👇 unified decision fields (approve OR reject)
-    @Column(name = "decision_by")
-    private String decisionById; // Keycloak user ID (manager/admin)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "decision_by")
+    private User decisionBy;
 
     @Column(name = "decision_at")
     private LocalDateTime decisionAt;

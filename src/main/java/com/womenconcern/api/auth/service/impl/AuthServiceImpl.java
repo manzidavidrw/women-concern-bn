@@ -153,6 +153,7 @@ public class AuthServiceImpl implements AuthService {
                 .lastName(req.getLastName())
                 .phoneNumber(req.getPhoneNumber())
                 .role(role)
+                .gender(req.getGender())
                 .joinedAt(req.getJoinedAt())
                 .isActive(true)
                 .mustChangePassword(true)

@@ -1,8 +1,11 @@
 package com.womenconcern.api.leave.controller;
 
+import com.womenconcern.api.auth.entity.User;
 import com.womenconcern.api.leave.dto.LeaveTypeDto;
-import com.womenconcern.api.leave.service.impl.LeaveTypeServiceImpl;
+import com.womenconcern.api.leave.repository.LeaveTypeRepository;
+import com.womenconcern.api.leave.service.ILeaveTypeService;
 import com.womenconcern.api.utils.ApiResponse;
+import com.womenconcern.api.utils.AuthUtils;
 import com.womenconcern.api.utils.PageResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
@@ -10,8 +13,11 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.UUID;
 
 
@@ -20,7 +26,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class LeaveTypeController {
 
-    private final LeaveTypeServiceImpl  leaveTypeService;
+    private final ILeaveTypeService leaveTypeService;
 
     @PostMapping
     @PreAuthorize("hasRole('ADMIN') or hasRole('EXECUTIVE_DIRECTOR')")
@@ -30,8 +36,8 @@ public class LeaveTypeController {
         return ResponseEntity.ok(apiResponse);
     }
 
-    @GetMapping
-    @PreAuthorize("isAuthenticated()")
+    @GetMapping("/leaders")
+    @PreAuthorize("hasAnyRole('ADMIN','EXECUTIVE_DIRECTOR')")
     public ResponseEntity<ApiResponse<PageResponse<LeaveTypeDto.Output>>> getAllLeaveTypes(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size
@@ -45,6 +51,23 @@ public class LeaveTypeController {
                 new ApiResponse<>(true, "Leave types fetched successfully", response)
         );
     }
+
+    @GetMapping
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<List<LeaveTypeDto.Output>>> getLeaveTypes() {
+
+        User user = AuthUtils.getCurrentUser();
+        UUID userId = user.getId();
+
+        return ResponseEntity.ok(
+                new ApiResponse<>(
+                        true,
+                        "Leave types retrieved successfully",
+                        leaveTypeService.getAvailableLeaveTypes(userId)
+                )
+        );
+    }
+
     @GetMapping("/{id}")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<LeaveTypeDto.Output> getLeaveTypeById(@PathVariable UUID id) {
@@ -53,7 +76,7 @@ public class LeaveTypeController {
         return ResponseEntity.status(HttpStatus.CREATED) .body(apiResponse.getData());
     }
     @PutMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('EXECUTIVE_DIRECTOR')")
+    @PreAuthorize("hasAnyRole('ADMIN','EXECUTIVE_DIRECTOR')")
     public ResponseEntity<ApiResponse<LeaveTypeDto.Output>> updateLeaveType(@PathVariable UUID id, @RequestBody LeaveTypeDto.Input input){
         var response = leaveTypeService.updateLeaveType(id, input);
         ApiResponse<LeaveTypeDto.Output>  apiResponse = new ApiResponse<>(true, "Leave type updated successfully", response );
@@ -61,7 +84,7 @@ public class LeaveTypeController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('EXECUTIVE_DIRECTOR')")
+    @PreAuthorize("hasAnyRole('ADMIN','EXECUTIVE_DIRECTOR')")
     public ResponseEntity<ApiResponse<Void>> deleteLeaveType(@PathVariable UUID id) {
 
         leaveTypeService.deleteLeaveType(id);
