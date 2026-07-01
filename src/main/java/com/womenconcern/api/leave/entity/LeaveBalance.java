@@ -35,6 +35,7 @@ public class LeaveBalance extends BaseEntity {
     @Column(name = "allocated_days", nullable = false)
     private Integer allocatedDays;
 
+    @Builder.Default
     @Column(name = "used_days", nullable = false)
     private Integer usedDays = 0;
 
