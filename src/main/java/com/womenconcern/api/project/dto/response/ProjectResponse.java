@@ -27,7 +27,7 @@ public class ProjectResponse {
     private ApprovalStatus projectManagerApprovalStatus;
     private ApprovalStatus financeApprovalStatus;
     private ApprovalStatus executiveApprovalStatus;
-    private List<ObjectiveResponse> objectives;
+    private List<GoalResponse> objectives;
     private Instant createdAt;
     private Instant updatedAt;
 }

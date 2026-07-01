@@ -56,6 +56,12 @@ public class User implements UserDetails {
     @Column
     private String address;
 
+    @Column(name = "profile_picture_url", length = 1000)
+    private String profilePictureUrl;
+
+    @Column(name = "profile_picture_id", length = 500)
+    private String profilePictureId;
+
     @Column(name = "national_id")
     private String nationalId;
 

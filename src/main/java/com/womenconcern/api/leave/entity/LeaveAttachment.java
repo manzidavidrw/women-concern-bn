@@ -14,7 +14,7 @@ import lombok.*;
 public class LeaveAttachment extends BaseEntity {
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "leave_request_id", nullable = false)
+    @JoinColumn(name = "leave_request_id", nullable = false,columnDefinition = "uuid")
     private LeaveRequest leaveRequest;
 
     @Column(nullable = false, length = 1000)

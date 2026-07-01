@@ -16,6 +16,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -43,7 +44,8 @@ public class ProjectServiceImpl implements ProjectService {
                 .name(request.getName())
                 .description(request.getDescription())
                 .projectManagerId(projectManagerId)
-                .totalBudget(request.getTotalBudget())
+                .approvedBudget(request.getTotalBudget())  // ← cap, never changes
+                .totalBudget(BigDecimal.ZERO)              // ← starts at 0, grows with activities
                 .status(ProjectStatus.DRAFT)
                 .projectManagerApprovalStatus(ApprovalStatus.PENDING)
                 .financeApprovalStatus(ApprovalStatus.PENDING)
@@ -132,10 +134,6 @@ public class ProjectServiceImpl implements ProjectService {
 
         if (!project.getProjectManagerId().equals(projectManagerId)) {
             throw new UnauthorizedException("Only the project manager can submit this project");
-        }
-
-        if (project.getProjectManagerApprovalStatus() != ApprovalStatus.APPROVED) {
-            throw new IllegalStateException("Project manager must approve the project first");
         }
 
         project.setStatus(ProjectStatus.SUBMITTED_FOR_FINANCE_REVIEW);

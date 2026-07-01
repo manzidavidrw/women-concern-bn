@@ -1,7 +1,7 @@
 -- =========================
 -- USERS TABLE
 -- =========================
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
                        id UUID PRIMARY KEY,
 
                        email VARCHAR(255) NOT NULL UNIQUE,
@@ -36,7 +36,7 @@ CREATE TABLE users (
 -- =========================
 -- LEAVE TYPES
 -- =========================
-CREATE TABLE leave_types (
+CREATE TABLE IF NOT EXISTS leave_types (
                              id UUID PRIMARY KEY,
 
                              name VARCHAR(255) NOT NULL,
@@ -58,7 +58,7 @@ CREATE TABLE leave_types (
 -- =========================
 -- LEAVE BALANCES
 -- =========================
-CREATE TABLE leave_balances (
+CREATE TABLE IF NOT EXISTS leave_balances (
                                 id UUID PRIMARY KEY,
 
                                 employee_id UUID NOT NULL,
@@ -87,7 +87,7 @@ CREATE TABLE leave_balances (
 -- =========================
 -- LEAVE REQUESTS
 -- =========================
-CREATE TABLE leave_requests (
+CREATE TABLE IF NOT EXISTS leave_requests (
                                 id UUID PRIMARY KEY,
 
                                 employee_id UUID NOT NULL,

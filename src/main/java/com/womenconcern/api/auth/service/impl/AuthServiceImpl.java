@@ -1,5 +1,6 @@
 package com.womenconcern.api.auth.service.impl;
 
+import com.cloudinary.Cloudinary;
 import com.womenconcern.api.auth.dto.*;
 import com.womenconcern.api.auth.entity.RefreshToken;
 import com.womenconcern.api.auth.entity.User;
@@ -7,11 +8,14 @@ import com.womenconcern.api.auth.enums.UserRole;
 import com.womenconcern.api.auth.repository.RefreshTokenRepository;
 import com.womenconcern.api.auth.repository.UserRepository;
 import com.womenconcern.api.auth.service.AuthService;
+import com.womenconcern.api.common.storage.dto.UploadedFile;
+import com.womenconcern.api.common.storage.service.IFileStorageService;
 import com.womenconcern.api.exception.BadRequestException;
 import com.womenconcern.api.exception.ConflictException;
 import com.womenconcern.api.exception.ResourceNotFoundException;
 import com.womenconcern.api.exception.UnauthorizedException;
 import com.womenconcern.api.security.JwtService;
+import jakarta.persistence.EntityNotFoundException;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,12 +24,14 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 @Slf4j
 @Service
@@ -38,6 +44,7 @@ public class AuthServiceImpl implements AuthService {
     private final PasswordEncoder        passwordEncoder;
     private final AuthenticationManager  authenticationManager;
     private final EmailService           emailService;
+    private final IFileStorageService fileStorageService;
 
     /** Refresh-token TTL: 7 days */
     private static final long REFRESH_TTL_SECONDS = 7L * 24 * 60 * 60;
@@ -214,21 +221,56 @@ public class AuthServiceImpl implements AuthService {
     // ── Profile ───────────────────────────────────────────────────
 
     @Override
-    @Transactional
-    public EmployeeProfileResponse updateMyProfile(String userId, UpdateProfileRequest req) {
-        User user = findUserById(userId);
+    public EmployeeProfileResponse updateMyProfile(
+            String userId,
+            UpdateProfileForm form,
+            MultipartFile profilePicture,
+            List<MultipartFile> certificates
+    ) {
+        User user = userRepository.findById(UUID.fromString(userId))
+                .orElseThrow(() -> new EntityNotFoundException("User not found"));
 
-        if (req.getFirstName()        != null) user.setFirstName(req.getFirstName());
-        if (req.getLastName()         != null) user.setLastName(req.getLastName());
-        if (req.getPhoneNumber()      != null) user.setPhoneNumber(req.getPhoneNumber());
-        if (req.getAddress()          != null) user.setAddress(req.getAddress());
-        if (req.getEmergencyContact() != null) user.setEmergencyContact(req.getEmergencyContact());
-        if (req.getDateOfBirth()      != null) user.setDateOfBirth(req.getDateOfBirth());
-        if (req.getCertificates()     != null) {
-            user.setCertificates(String.join(",", req.getCertificates()));
+        if (form.getFirstName()         != null) user.setFirstName(form.getFirstName());
+        if (form.getLastName()          != null) user.setLastName(form.getLastName());
+        if (form.getPhoneNumber()       != null) user.setPhoneNumber(form.getPhoneNumber());
+        if (form.getAddress()           != null) user.setAddress(form.getAddress());
+        if (form.getEmergencyContact()  != null) user.setEmergencyContact(form.getEmergencyContact());
+        if (form.getDateOfBirth()       != null) user.setDateOfBirth(form.getDateOfBirth());
+
+        // upload profile picture
+        if (profilePicture != null && !profilePicture.isEmpty()) {
+            if (user.getProfilePictureId() != null) {
+                try {
+                    fileStorageService.delete(user.getProfilePictureId());
+                } catch (Exception e) {
+                    log.warn("Failed to delete old profile picture: {}", user.getProfilePictureId());
+                }
+            }
+            UploadedFile uploaded = fileStorageService.upload(profilePicture);
+            user.setProfilePictureUrl(uploaded.url());
+            user.setProfilePictureId(uploaded.publicId());
         }
 
-        return toProfileResponse(userRepository.save(user));
+        // upload certificate files → store as comma-separated URLs
+        if (certificates != null && !certificates.isEmpty()) {
+            List<String> urls = certificates.stream()
+                    .filter(f -> f != null && !f.isEmpty())
+                    .map(file -> fileStorageService.upload(file).url())
+                    .toList();
+
+            // append to existing certificates instead of replacing
+            String existing = user.getCertificates();
+            if (existing != null && !existing.isBlank()) {
+                urls = Stream.concat(
+                        Arrays.stream(existing.split(",")),
+                        urls.stream()
+                ).toList();
+            }
+
+            user.setCertificates(String.join(",", urls));
+        }
+
+        return mapToProfileResponse(userRepository.save(user));
     }
 
     @Override
@@ -278,7 +320,7 @@ public class AuthServiceImpl implements AuthService {
         resp.setFirstName(user.getFirstName());
         resp.setLastName(user.getLastName());
         resp.setPhoneNumber(user.getPhoneNumber());
-        resp.setRole(user.getRole().name());
+        resp.setRole(UserRole.valueOf(user.getRole().name()));
         resp.setJobTitle(user.getJobTitle());
         resp.setAddress(user.getAddress());
         resp.setNationalId(user.getNationalId());
@@ -293,5 +335,27 @@ public class AuthServiceImpl implements AuthService {
                         : Arrays.asList(certs.split(","))
         );
         return resp;
+    }
+    private EmployeeProfileResponse mapToProfileResponse(User user) {
+        return EmployeeProfileResponse.builder()
+                .id(user.getId())
+                .email(user.getEmail())
+                .firstName(user.getFirstName())
+                .lastName(user.getLastName())
+                .phoneNumber(user.getPhoneNumber())
+                .address(user.getAddress())
+                .emergencyContact(user.getEmergencyContact())
+                .certificates(user.getCertificates() != null
+                        ? Arrays.asList(user.getCertificates().split(","))  // <-- fixed
+                        : List.of())
+                .dateOfBirth(user.getDateOfBirth())
+                .joinedAt(user.getJoinedAt())
+                .gender(user.getGender())
+                .role(user.getRole())
+                .jobTitle(user.getJobTitle())
+                .nationalId(user.getNationalId())
+                .profilePictureUrl(user.getProfilePictureUrl())
+                .isActive(user.isActive())
+                .build();
     }
 }

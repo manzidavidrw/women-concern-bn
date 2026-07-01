@@ -22,11 +22,11 @@ import java.time.LocalDate;
 public class LeaveBalance extends BaseEntity {
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "employee_id", nullable = false)
+    @JoinColumn(name = "employee_id", nullable = false,columnDefinition = "uuid")
     private User employee;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "leave_type_id", nullable = false)
+    @JoinColumn(name = "leave_type_id", nullable = false,columnDefinition = "uuid")
     private LeaveType leaveType;
 
     @Column(name = "year", nullable = false)

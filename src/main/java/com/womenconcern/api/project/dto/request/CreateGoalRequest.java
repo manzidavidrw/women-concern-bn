@@ -1,8 +1,8 @@
 package com.womenconcern.api.project.dto.request;
 
 
+
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -15,9 +15,9 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class CreateResultRequest {
-    @Valid
-    @NotEmpty(message = "at least one result is needed")
-    private List<ResultRequest> results;
+public class CreateGoalRequest  {
 
+    @Valid
+    @NotEmpty(message = "At least one objective is required")
+    private List<GoalRequest> goals;
 }

@@ -5,6 +5,9 @@ import com.womenconcern.api.auth.entity.User;
 import com.womenconcern.api.leave.dto.LeaveRequestDto;
 import com.womenconcern.api.leave.leaveEnum.LeaveStatus;
 import com.womenconcern.api.leave.service.ILeaveRequestService;
+import com.womenconcern.api.leave.dto.LeaveRequestForm;
+import com.womenconcern.api.leave.leaveEnum.LeaveStatus;
+import com.womenconcern.api.leave.service.ILeaveRequestService;
 import com.womenconcern.api.utils.ApiResponse;
 import com.womenconcern.api.utils.AuthUtils;
 import com.womenconcern.api.utils.PageResponse;
@@ -13,6 +16,9 @@ import io.swagger.v3.oas.annotations.media.Content;
 import jakarta.validation.Valid;
 import jakarta.validation.Validator;
 import lombok.RequiredArgsConstructor;
+import org.springdoc.core.annotations.ParameterObject;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -40,29 +46,27 @@ public class LeaveRequestController {
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ApiResponse<LeaveRequestDto.Output>> createLeaveRequest(
 
-            @RequestPart("request") @Valid LeaveRequestDto.Input request,
+            @ParameterObject @ModelAttribute @Valid LeaveRequestForm form,
 
             @RequestPart(value = "attachments", required = false)
             List<MultipartFile> attachments
     ) {
 
-        System.out.println("Reached createLeaveRequest");
-
         User user = AuthUtils.getCurrentUser();
 
+        LeaveRequestDto.Input request = new LeaveRequestDto.Input(
+                form.getLeaveTypeId(),
+                form.getStartDate(),
+                form.getEndDate(),
+                form.getAction(),
+                form.getReason()
+        );
+
         LeaveRequestDto.Output response =
-                leaveRequestService.createLeaveRequest(
-                        request,
-                        attachments,
-                        user.getId()
-                );
+                leaveRequestService.createLeaveRequest(request, attachments, user.getId());
 
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(new ApiResponse<>(
-                        true,
-                        "Leave request created successfully",
-                        response
-                ));
+                .body(new ApiResponse<>(true, "Leave request created successfully", response));
     }
 
     // ─────────────────────────────────────────────
