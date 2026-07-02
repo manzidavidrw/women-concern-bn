@@ -16,9 +16,6 @@ public interface AuthService {
 
     String resetPassword(String userId);
 
-    void forgotPassword(String userId);
-
-
     EmployeeProfileResponse updateMyProfile(
             String userId,
             UpdateProfileForm form,
@@ -28,4 +25,9 @@ public interface AuthService {
     EmployeeProfileResponse getMyProfile(String userId);
 
     List<EmployeeProfileResponse> getAllProfiles();
+
+    PasswordDto.ForgotPasswordResponse forgotPassword(String email);
+    PasswordDto.ResetPasswordResponse resetPassword(PasswordDto.ResetPasswordRequest request);
+    PasswordDto.ForceResetPasswordResponse forceResetPassword(String userId);
+    byte[] generateIdCard(String userId) throws Exception;
 }

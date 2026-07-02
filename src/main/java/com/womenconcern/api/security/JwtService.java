@@ -1,6 +1,7 @@
 package com.womenconcern.api.security;
 
 import com.womenconcern.api.auth.entity.User;
+import com.womenconcern.api.exception.BadRequestException;
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
@@ -98,4 +99,41 @@ public class JwtService {
     public long getAccessTokenExpirySeconds() {
         return accessTokenExpirySeconds;
     }
+    // ── Password Reset Token ─────────────────────────────────────────
+
+    public String generatePasswordResetToken(String email, String passwordHash) {
+        long now = System.currentTimeMillis();
+        return Jwts.builder()
+                .subject(email)
+                .claim("type", "password_reset")
+                .claim("fp", passwordHash.substring(0, 10)) // fingerprint
+                .issuedAt(new Date(now))
+                .expiration(new Date(now + 30 * 60 * 1000L)) // 30 minutes
+                .id(UUID.randomUUID().toString())
+                .signWith(signingKey())
+                .compact();
+    }
+
+    public Claims extractResetTokenClaims(String token) {
+        try {
+            Claims claims = Jwts.parser()
+                    .verifyWith(signingKey())
+                    .build()
+                    .parseSignedClaims(token)
+                    .getPayload();
+
+            if (!"password_reset".equals(claims.get("type"))) {
+                throw new BadRequestException("Invalid reset token");
+            }
+
+            return claims;
+
+        } catch (ExpiredJwtException e) {
+            throw new BadRequestException("Reset token has expired. Please request a new one.");
+        } catch (JwtException e) {
+            throw new BadRequestException("Invalid reset token.");
+        }
+    }
+
+
 }

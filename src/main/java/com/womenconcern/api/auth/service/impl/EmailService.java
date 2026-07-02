@@ -216,4 +216,34 @@ public class EmailService {
             """.formatted(firstName, activityTitle, frontendUrl);
         sendEmail(to, subject, html);
     }
+    @Async
+    public void sendPasswordResetLink(String to, String firstName, String resetLink) {
+        String subject = "Women Concern — Reset Your Password";
+        String html = """
+        <div style="font-family: Arial, sans-serif; max-width: 560px; margin: auto;">
+            <div style="background: #2D5016; padding: 24px; border-radius: 8px 8px 0 0;">
+                <h2 style="color: #F4A623; margin: 0;">Women Concern Management System</h2>
+            </div>
+            <div style="padding: 24px; border: 1px solid #e0e0e0; border-top: none; border-radius: 0 0 8px 8px;">
+                <p>Hi <strong>%s</strong>,</p>
+                <p>We received a request to reset your password. Click the button below to set a new password.</p>
+                <p style="color: #757575;">This link expires in <strong>30 minutes</strong>.</p>
+                <a href="%s"
+                   style="background:#7CB342;color:white;padding:12px 24px;
+                          text-decoration:none;border-radius:6px;display:inline-block;
+                          margin-top:8px;font-weight:bold;">
+                    Reset My Password
+                </a>
+                <p style="margin-top: 24px; color: #757575; font-size: 13px;">
+                    If you did not request a password reset, ignore this email —
+                    your password will not change.
+                </p>
+                <p style="color: #757575; font-size: 12px; word-break: break-all;">
+                    Or copy this link: %s
+                </p>
+            </div>
+        </div>
+        """.formatted(firstName, resetLink, resetLink);
+        sendEmail(to, subject, html);
+    }
 }
