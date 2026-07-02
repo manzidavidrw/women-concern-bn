@@ -8,6 +8,7 @@ import com.womenconcern.api.auth.enums.UserRole;
 import com.womenconcern.api.auth.repository.RefreshTokenRepository;
 import com.womenconcern.api.auth.repository.UserRepository;
 import com.womenconcern.api.auth.service.AuthService;
+import com.womenconcern.api.auth.service.IdCardGenerator;
 import com.womenconcern.api.common.storage.dto.UploadedFile;
 import com.womenconcern.api.common.storage.service.IFileStorageService;
 import com.womenconcern.api.exception.BadRequestException;
@@ -15,21 +16,25 @@ import com.womenconcern.api.exception.ConflictException;
 import com.womenconcern.api.exception.ResourceNotFoundException;
 import com.womenconcern.api.exception.UnauthorizedException;
 import com.womenconcern.api.security.JwtService;
+import io.jsonwebtoken.Claims;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.http.HttpHeaders;
 
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Stream;
 
@@ -45,9 +50,13 @@ public class AuthServiceImpl implements AuthService {
     private final AuthenticationManager  authenticationManager;
     private final EmailService           emailService;
     private final IFileStorageService fileStorageService;
+    private final IdCardGenerator idCardGenerator;
+    ;
 
-    /** Refresh-token TTL: 7 days */
+
     private static final long REFRESH_TTL_SECONDS = 7L * 24 * 60 * 60;
+    @Value("${app.frontend.url:http://localhost:5173}")  // <-- add this
+    private String frontendUrl;
 
     // ── Login ─────────────────────────────────────────────────────
 
@@ -205,20 +214,6 @@ public class AuthServiceImpl implements AuthService {
 
     // ── Forgot password (self-service) ────────────────────────────
 
-    @Override
-    @Transactional
-    public void forgotPassword(String userId) {
-        User user = findUserById(userId);
-        String newPassword = generateTempPassword();
-        user.setPasswordHash(passwordEncoder.encode(newPassword));
-        user.setMustChangePassword(true);
-        userRepository.save(user);
-        refreshTokenRepository.revokeAllByUser(user);
-
-        emailService.sendPasswordResetEmail(user.getEmail(), user.getFirstName(), newPassword);
-    }
-
-    // ── Profile ───────────────────────────────────────────────────
 
     @Override
     public EmployeeProfileResponse updateMyProfile(
@@ -357,5 +352,110 @@ public class AuthServiceImpl implements AuthService {
                 .profilePictureUrl(user.getProfilePictureUrl())
                 .isActive(user.isActive())
                 .build();
+    }
+
+    @Override
+    @Transactional
+    public PasswordDto.ForgotPasswordResponse forgotPassword(String email) {
+
+        Optional<User> userOpt = userRepository.findByEmail(email);
+        if (userOpt.isEmpty()) {
+            log.info("Forgot password requested for unknown email: {}", email);
+            // silently return — never leak user existence
+            return new PasswordDto.ForgotPasswordResponse(
+                    "If that email is registered, a reset link has been sent."
+            );
+        }
+
+        User user = userOpt.get();
+
+        String token = jwtService.generatePasswordResetToken(
+                user.getEmail(),
+                user.getPasswordHash()
+        );
+
+        String resetLink = frontendUrl + "/reset-password?token=" + token;
+
+        try {
+            emailService.sendPasswordResetLink(
+                    user.getEmail(),
+                    user.getFirstName(),
+                    resetLink
+            );
+            log.info("Password reset link sent to {}", email);
+        } catch (Exception e) {
+            log.warn("Failed to send reset email to {}: {}", email, e.getMessage());
+        }
+
+        return new PasswordDto.ForgotPasswordResponse(
+                "If that email is registered, a reset link has been sent."
+        );
+    }
+
+    @Override
+    @Transactional
+    public PasswordDto.ResetPasswordResponse resetPassword(PasswordDto.ResetPasswordRequest request) {
+
+        if (!request.newPassword().equals(request.confirmPassword())) {
+            throw new BadRequestException("Passwords do not match");
+        }
+
+        Claims claims = jwtService.extractResetTokenClaims(request.token());
+        String email = claims.getSubject();
+        String fingerprint = (String) claims.get("fp");
+
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new BadRequestException("Invalid reset token"));
+
+        if (!user.getPasswordHash().startsWith(fingerprint)) {
+            throw new BadRequestException("Reset token has already been used.");
+        }
+
+        user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
+        user.setMustChangePassword(false);
+        userRepository.save(user);
+
+        refreshTokenRepository.revokeAllByUser(user);
+
+        log.info("Password reset successfully for {}", email);
+
+        return new PasswordDto.ResetPasswordResponse(
+                "Password reset successfully. You can now log in."
+        );
+    }
+
+    @Override
+    @Transactional
+    public PasswordDto.ForceResetPasswordResponse forceResetPassword(String userId) {
+
+        User user = findUserById(userId);
+        String tempPassword = generateTempPassword();
+
+        user.setPasswordHash(passwordEncoder.encode(tempPassword));
+        user.setMustChangePassword(true);
+        userRepository.save(user);
+
+        refreshTokenRepository.revokeAllByUser(user);
+
+        try {
+            emailService.sendPasswordResetEmail(
+                    user.getEmail(),
+                    user.getFirstName(),
+                    tempPassword
+            );
+            log.info("Force password reset done for {}", user.getEmail());
+        } catch (Exception e) {
+            log.warn("Force reset email failed for {}: {}", user.getEmail(), e.getMessage());
+        }
+
+        return new PasswordDto.ForceResetPasswordResponse(
+                "Password has been reset. User will receive an email.",
+                user.getEmail()
+        );
+    }
+    @Override
+    public byte[] generateIdCard(String userId) throws Exception {
+        User user = findUserById(userId); // already exists in the impl
+        return idCardGenerator.generate(user);
     }
 }
