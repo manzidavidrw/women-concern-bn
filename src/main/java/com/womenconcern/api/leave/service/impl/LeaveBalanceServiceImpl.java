@@ -2,6 +2,7 @@ package com.womenconcern.api.leave.service.impl;
 
 import com.womenconcern.api.auth.dto.UserDto;
 import com.womenconcern.api.auth.entity.User;
+import com.womenconcern.api.auth.mapper.UserMapper;
 import com.womenconcern.api.auth.repository.UserRepository;
 import com.womenconcern.api.leave.dto.LeaveBalanceDto;
 import com.womenconcern.api.leave.entity.LeaveBalance;
@@ -181,14 +182,7 @@ public class LeaveBalanceServiceImpl implements ILeaveBalanceService {
     private LeaveBalanceDto.Output mapToOutput(LeaveBalance balance) {
         return new LeaveBalanceDto.Output(
                 balance.getId(),
-                new UserDto(
-                        balance.getEmployee().getId(),
-                        balance.getEmployee().getEmail(),
-                        balance.getEmployee().getFirstName(),
-                        balance.getEmployee().getLastName(),
-                        balance.getEmployee().getPhoneNumber(),
-                        balance.getEmployee().getRole()
-                ),
+                UserMapper.mapToLinkedUser(balance.getEmployee()),
                 balance.getLeaveType().getId(),
                 balance.getLeaveType().getName(),
                 balance.getYear(),
