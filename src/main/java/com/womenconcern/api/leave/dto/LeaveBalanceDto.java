@@ -41,7 +41,7 @@ public class LeaveBalanceDto {
 
             UUID id,
 
-            UserDto employeeId,
+            UserDto.LinkedUser employeeId,
 
             UUID leaveTypeId,
             String leaveTypeName,

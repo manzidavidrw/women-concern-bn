@@ -3,9 +3,11 @@ package com.womenconcern.api.leave.service.impl;
 import com.womenconcern.api.auth.enums.Gender;
 import com.womenconcern.api.auth.dto.UserDto;
 import com.womenconcern.api.auth.entity.User;
+import com.womenconcern.api.auth.mapper.UserMapper;
 import com.womenconcern.api.auth.repository.UserRepository;
 import com.womenconcern.api.common.storage.dto.UploadedFile;
 import com.womenconcern.api.common.storage.service.IFileStorageService;
+import com.womenconcern.api.exception.ResourceNotFoundException;
 import com.womenconcern.api.leave.dto.LeaveAttachmentDto;
 import com.womenconcern.api.leave.dto.LeaveRequestDto;
 import com.womenconcern.api.leave.dto.LeaveTypeDto;
@@ -21,7 +23,6 @@ import com.womenconcern.api.leave.repository.LeaveTypeRepository;
 import com.womenconcern.api.leave.service.ILeaveBalanceService;
 import com.womenconcern.api.leave.service.ILeaveRequestService;
 import com.womenconcern.api.utils.PageResponse;
-import jakarta.persistence.EntityNotFoundException;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -62,10 +63,10 @@ public class LeaveRequestServiceImpl implements ILeaveRequestService {
                 : LeaveStatus.DRAFT;
 
         User employee = userRepository.findById(employeeId)
-                .orElseThrow(() -> new EntityNotFoundException("Employee not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Employee not found"));
 
         LeaveType leaveType = leaveTypeRepository.findById(input.leaveTypeId())
-                .orElseThrow(() -> new EntityNotFoundException("Leave type not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Leave type not found"));
 
         if (!isEligible(employee, leaveType)) {
             throw new IllegalArgumentException("You are not eligible for " + leaveType.getName());
@@ -131,7 +132,7 @@ public class LeaveRequestServiceImpl implements ILeaveRequestService {
     @Override
     public LeaveRequestDto.Output submitRequest(UUID requestId, UUID employeeId) {
         LeaveRequest request = leaveRequestRepository.findById(requestId)
-                .orElseThrow(() -> new EntityNotFoundException("Leave request not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Leave request not found"));
 
         if (!request.getEmployee().getId().equals(employeeId)) {
             throw new IllegalArgumentException("You can only submit your own leave request");
@@ -199,7 +200,7 @@ public class LeaveRequestServiceImpl implements ILeaveRequestService {
     public LeaveRequestDto.Output getRequestById(UUID requestId) {
 
         LeaveRequest request = leaveRequestRepository.findById(requestId)
-                .orElseThrow(() -> new EntityNotFoundException("Leave request not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Leave request not found"));
 
         return mapToOutput(request);
     }
@@ -208,10 +209,10 @@ public class LeaveRequestServiceImpl implements ILeaveRequestService {
     public LeaveRequestDto.Output approveRequest(UUID requestId, UUID actorId) {
 
         LeaveRequest request = leaveRequestRepository.findById(requestId)
-                .orElseThrow(() -> new EntityNotFoundException("Leave request not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Leave request not found"));
 
         User actor = userRepository.findById(actorId)
-                .orElseThrow(() -> new EntityNotFoundException("Actor not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Actor not found"));
 
         validateStatus(request);
 
@@ -234,10 +235,10 @@ public class LeaveRequestServiceImpl implements ILeaveRequestService {
     public LeaveRequestDto.Output rejectRequest(UUID requestId, UUID actorId, String comment) {
 
         LeaveRequest leaveRequest = leaveRequestRepository.findById(requestId)
-                .orElseThrow(() -> new EntityNotFoundException("Leave request not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Leave request not found"));
 
         User actor = userRepository.findById(actorId)
-                .orElseThrow(() -> new EntityNotFoundException("Actor not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Actor not found"));
 
         // Only submitted requests can be rejected
         if (leaveRequest.getStatus() != LeaveStatus.SUBMITTED) {
@@ -256,7 +257,7 @@ public class LeaveRequestServiceImpl implements ILeaveRequestService {
     public LeaveRequestDto.Output resubmitRequest(UUID requestId, UUID employeeId) {
 
         LeaveRequest request = leaveRequestRepository.findById(requestId)
-                .orElseThrow(() -> new EntityNotFoundException("Leave request not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Leave request not found"));
 
         validateLeaveDates(request.getStartDate(),  request.getEndDate());
 
@@ -272,7 +273,7 @@ public class LeaveRequestServiceImpl implements ILeaveRequestService {
     public LeaveRequestDto.Output cancelRequest(UUID requestId, UUID employeeId) {
 
         LeaveRequest request = leaveRequestRepository.findById(requestId)
-                .orElseThrow(() -> new EntityNotFoundException("Leave request not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Leave request not found"));
 
         if (!request.getEmployee().getId().equals(employeeId)) {
             throw new IllegalArgumentException("You can only cancel your own request");
@@ -295,7 +296,7 @@ public class LeaveRequestServiceImpl implements ILeaveRequestService {
     public void deleteLeaveRequest(UUID requestId, UUID actorId) {
 
         LeaveRequest request = leaveRequestRepository.findById(requestId)
-                .orElseThrow(() -> new EntityNotFoundException("Leave request not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Leave request not found"));
 
         if (!request.getEmployee().getId().equals(actorId)) {
             throw new IllegalArgumentException("You can only delete your own leave request");
@@ -365,16 +366,7 @@ public class LeaveRequestServiceImpl implements ILeaveRequestService {
 
         return new LeaveRequestDto.Output(
                 entity.getId(),
-
-                new UserDto(
-                        entity.getEmployee().getId(),
-                        entity.getEmployee().getEmail(),
-                        entity.getEmployee().getFirstName(),
-                        entity.getEmployee().getLastName(),
-                        entity.getEmployee().getPhoneNumber(),
-                        entity.getEmployee().getRole()
-                ),
-
+                UserMapper.mapToLinkedUser(entity.getEmployee()),
                 new LeaveTypeDto.Output(
                         entity.getLeaveType().getId(),
                         entity.getLeaveType().getName(),
@@ -394,18 +386,7 @@ public class LeaveRequestServiceImpl implements ILeaveRequestService {
                 entity.getDaysRequested(),
                 entity.getReason(),
                 entity.getStatus(),
-
-                //  FIXED HERE
-                entity.getDecisionBy() != null
-                        ? new UserDto(
-                        entity.getDecisionBy().getId(),
-                        entity.getDecisionBy().getEmail(),
-                        entity.getDecisionBy().getFirstName(),
-                        entity.getDecisionBy().getLastName(),
-                        entity.getDecisionBy().getPhoneNumber(),
-                        entity.getDecisionBy().getRole()
-                )
-                        : null,
+                UserMapper.mapToLinkedUser(entity.getDecisionBy()),
 
                 entity.getDecisionAt(),
                 entity.getDecisionComment(),

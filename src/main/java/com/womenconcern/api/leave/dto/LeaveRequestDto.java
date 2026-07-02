@@ -39,7 +39,7 @@ public class LeaveRequestDto {
     public record Output(
             UUID id,
 
-            UserDto employeeId,
+            UserDto.LinkedUser employeeId,
 
             LeaveTypeDto.Output leaveType,
 
@@ -51,7 +51,7 @@ public class LeaveRequestDto {
 
             LeaveStatus status,
 
-            UserDto decisionById,
+            UserDto.LinkedUser decisionById,
             LocalDateTime decisionAt,
             String decisionComment,
             List<LeaveAttachmentDto.Output> attachments,

@@ -1,6 +1,7 @@
 package com.womenconcern.api.config;
 
 import com.womenconcern.api.auth.entity.User;
+import com.womenconcern.api.auth.enums.Gender;
 import com.womenconcern.api.auth.enums.UserRole;
 import com.womenconcern.api.auth.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -38,6 +39,7 @@ public class Seeder implements ApplicationRunner {
                     .firstName(firstName)
                     .lastName(lastName)
                     .role(role)
+                    .gender(Gender.MALE)
                     .isActive(true)
                     .joinedAt(LocalDate.now())
                     .build();
